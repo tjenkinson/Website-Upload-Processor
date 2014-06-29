@@ -17,7 +17,8 @@ public class App {
 	private static Logger logger = Logger.getLogger(App.class);
 	
 	/**
-	 * First argument should be path to the config file.
+	 * First argument should be path to the log4j config file.
+	 * Second argument should be path to the main config file.
 	 * Config file format: http://commons.apache.org/proper/commons-configuration/userguide/howto_properties.html#Properties_files
 	 */
 	public static void main(String[] args) {
