@@ -8,7 +8,7 @@ import org.apache.log4j.Logger;
 
 public class Db {
 	
-	private static Logger logger = Logger.getLogger(App.class);
+	private static Logger logger = Logger.getLogger(Db.class);
 	
 	private String host;
 	private String database;
