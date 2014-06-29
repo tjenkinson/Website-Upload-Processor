@@ -4,7 +4,11 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 
+import org.apache.log4j.Logger;
+
 public class Db {
+	
+	private static Logger logger = Logger.getLogger(App.class);
 	
 	private String host;
 	private String database;
@@ -37,9 +41,10 @@ public class Db {
 		}
 		
 		Config config = Config.getInstance();
-		
+		logger.info("Connecting to database.");
 		for(int i=0; i<config.getInt("db.noConnectionRetries") && connection == null; i++) {
 			if (i > 0) {
+				logger.warn("Connection failed. Retrying in "+config.getInt("db.connectionRetryInterval")+" seconds. Attempt +"+(i+1)+".");
 				try {
 					Thread.sleep(config.getInt("db.connectionRetryInterval")*1000);
 				} catch (InterruptedException e) {
@@ -53,18 +58,25 @@ public class Db {
 		if (connection == null) {
 			throw(new RuntimeException("Could not connect to database."));
 		}
+		logger.info("Connected to database.");
 	}
 	
 	/**
 	 * Disconnects from the database if connected.
 	 */
 	public void disconnect() {
+		logger.info("Disconnecting from database.");
+		if (connection == null) {
+			logger.info("Already disconnected.");
+			return;
+		}
 		try {
 			connection.close();
 		} catch (SQLException e) {
 			throw(new RuntimeException("Error closing database connection."));
 		}
 		connection = null;
+		logger.info("Disconnected from database.");
 	}
 	
 	/**
