@@ -43,8 +43,6 @@ public class App {
 		// connect to database and pass Db object to DbHelper so it can be retrieved from anywhere
 		DbHelper.setMainDb(new Db(config.getString("db.host"), config.getString("db.database"), config.getString("db.username"), config.getString("db.password")));
 
-		
-		System.out.println("Hello World 4!");
-
+		new JobPoller();
 	}
 }
