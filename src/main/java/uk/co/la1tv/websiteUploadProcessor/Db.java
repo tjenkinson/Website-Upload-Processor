@@ -36,12 +36,13 @@ public class Db {
 	 * Connects to the database if not already connected.
 	 */
 	public void connect() {
+		logger.info("Connecting to database.");
 		if (connection != null) {
+			logger.info("Already connected.");
 			return;
 		}
 		
 		Config config = Config.getInstance();
-		logger.info("Connecting to database.");
 		for(int i=0; i<config.getInt("db.noConnectionRetries") && connection == null; i++) {
 			if (i > 0) {
 				logger.warn("Connection failed. Retrying in "+config.getInt("db.connectionRetryInterval")+" seconds. Attempt +"+(i+1)+".");
