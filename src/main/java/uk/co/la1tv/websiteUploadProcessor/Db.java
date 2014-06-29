@@ -45,7 +45,7 @@ public class Db {
 		Config config = Config.getInstance();
 		for(int i=0; i<config.getInt("db.noConnectionRetries") && connection == null; i++) {
 			if (i > 0) {
-				logger.warn("Connection failed. Retrying in "+config.getInt("db.connectionRetryInterval")+" seconds. Attempt +"+(i+1)+".");
+				logger.warn("Connection failed. Retrying in "+config.getInt("db.connectionRetryInterval")+" seconds. Attempt "+(i+1)+".");
 				try {
 					Thread.sleep(config.getInt("db.connectionRetryInterval")*1000);
 				} catch (InterruptedException e) {
