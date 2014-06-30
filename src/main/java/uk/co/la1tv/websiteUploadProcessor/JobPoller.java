@@ -53,12 +53,26 @@ public class JobPoller {
 		@Override
 		public void run() {
 			synchronized(lock1) {
-				logger.info("Polling...");
 				Db db = DbHelper.getMainDb();
 				Connection dbConnection = db.getConnection();
 				
+				// get list of file ids that should not be returned from queries because they are currently being processed
+				String fileIdsWhere = "";
+				if (queue.size() > 0) {
+					fileIdsWhere = " AND id NOT IN (";
+					for (int i=0; i<queue.size(); i++) {
+						if (i > 0) {
+							fileIdsWhere += ",";
+						}
+						fileIdsWhere += "?";
+					}
+					fileIdsWhere += ")";
+				}
+				
+				// look for files to process
 				try {
 					
+					logger.info("Polling for files that need processing...");
 					String fileTypeIdsWhere = "";
 					if (FileType.values().length > 0) {
 						fileTypeIdsWhere = " AND file_type_id IN (";
@@ -70,19 +84,8 @@ public class JobPoller {
 						}
 						fileTypeIdsWhere += ")";
 					}
-					String fileIdsWhere = "";
-					if (queue.size() > 0) {
-						fileIdsWhere = " AND id NOT IN (";
-						for (int i=0; i<queue.size(); i++) {
-							if (i > 0) {
-								fileIdsWhere += ",";
-							}
-							fileIdsWhere += "?";
-						}
-						fileIdsWhere += ")";
-					}
 					
-					PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE process_state=0"+fileTypeIdsWhere+fileIdsWhere+" ORDER BY updated_at DESC");
+					PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE process_state=0 AND ready_for_delete=0"+fileTypeIdsWhere+fileIdsWhere+" ORDER BY updated_at DESC");
 					int i = 1;
 					for (FileType a : FileType.values()) {
 						s.setInt(i++, a.getObj().getId());
@@ -112,7 +115,11 @@ public class JobPoller {
 				} catch (SQLException e) {
 					logger.error("SQLException when trying to query databases for files that need processing.");
 				}
-				logger.info("Finished polling.");
+				logger.info("Finished polling for files that need processing.");
+				
+				logger.info("Polling for files pending deletion...");
+				
+				logger.info("Finished polling for files pending deletion.");
 			}
 		}
 		

@@ -40,8 +40,7 @@ public class File {
 	
 	public void process() {
 		logger.info("Started processing file with id "+id+" and name '"+name+"'.");
-	
-		
+		type.process(this);
 		logger.info("Finished processing file with id "+id+" and name '"+name+"'.");
 	}
 }

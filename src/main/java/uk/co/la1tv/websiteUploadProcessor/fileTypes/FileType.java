@@ -4,7 +4,11 @@ public enum FileType {
 	SIDE_BANNER_IMAGES(new SideBannersImageFileType(1)),
 	COVER_IMAGE(new CoverImageFileType(2)),
 	VOD_VIDEO(new VODVideoFileType(3)),
-	COVER_ART(new CoverArtFileType(4));
+	COVER_ART_IMAGE(new CoverArtFileType(4)),
+	SIDE_BANNER_IMAGES_RENDER(new SideBannersImageRenderFileType(5)),
+	COVER_IMAGE_RENDER(new CoverImageRenderFileType(6)),
+	VOD_VIDEO_RENDER(new VODVideoRenderFileType(7)),
+	COVER_ART_IMAGE_RENDER(new CoverArtImageRenderFileType(8));
 	
 	private FileTypeAbstract instance;
 	
