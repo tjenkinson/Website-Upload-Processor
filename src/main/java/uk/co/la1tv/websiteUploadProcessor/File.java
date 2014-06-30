@@ -19,7 +19,7 @@ public class File {
 		this.name = name;
 		this.size = size;
 		this.type = type;
-		logger.info("Created File object for file with id "+id+" and name '"+name+"'.");
+		logger.info("Created File object for file of type '"+type.getClass().getSimpleName()+"' with id "+id+" and name '"+name+"'.");
 	}
 	
 	public int getId() {

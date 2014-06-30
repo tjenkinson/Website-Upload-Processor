@@ -1,5 +1,11 @@
 package uk.co.la1tv.websiteUploadProcessor;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -9,6 +15,7 @@ import java.util.concurrent.Executors;
 import org.apache.log4j.Logger;
 
 import uk.co.la1tv.websiteUploadProcessor.fileTypes.FileType;
+import uk.co.la1tv.websiteUploadProcessor.helpers.DbHelper;
 
 /**
  * Scans the File table at set intervals looking for new files with file types that require processing.
@@ -26,11 +33,14 @@ public class JobPoller {
 	private ExecutorService threadPool;
 	private TaskCompletionHandler taskCompletionHandler;
 	private Timer timer;
+	private Config config;
+	
+	private Object lock1 = new Object();
 	
 	public JobPoller() {
 		logger.info("Loading Job Poller...");
 		
-		Config config = Config.getInstance();
+		config = Config.getInstance();
 		threadPool = Executors.newFixedThreadPool(config.getInt("general.noThreads"));
 		taskCompletionHandler = new TaskCompletionHandler();
 		timer = new Timer(false);
@@ -41,27 +51,69 @@ public class JobPoller {
 	private class PollTask extends TimerTask {
 
 		@Override
-		public synchronized void run() {
-			
-			logger.info("Polling...");
-			
-			// lets say it found a file with id 5 that needs processing
-			
-			int fileId = 5;
-			
-			// check this file id is not in the queue. It shouldn't be. If it is then there was something wrong with the db query!
-			
-			if (queue.contains(fileId)) {
-				logger.error("A file id was retrieved from the database for processing but this id was already in the queue. This shouldn't happen because it should have been excluded in the database query.");
-				//TODO: might end up being a continue;
-				return;
+		public void run() {
+			synchronized(lock1) {
+				logger.info("Polling...");
+				Db db = DbHelper.getMainDb();
+				Connection dbConnection = db.getConnection();
+				
+				try {
+					
+					String fileTypeIdsWhere = "";
+					if (FileType.values().length > 0) {
+						fileTypeIdsWhere = " AND file_type_id IN (";
+						for (int i=0; i<FileType.values().length; i++) {
+							if (i > 0) {
+								fileTypeIdsWhere += ",";
+							}
+							fileTypeIdsWhere += "?";
+						}
+						fileTypeIdsWhere += ")";
+					}
+					String fileIdsWhere = "";
+					if (queue.size() > 0) {
+						fileIdsWhere = " AND id NOT IN (";
+						for (int i=0; i<queue.size(); i++) {
+							if (i > 0) {
+								fileIdsWhere += ",";
+							}
+							fileIdsWhere += "?";
+						}
+						fileIdsWhere += ")";
+					}
+					
+					PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE process_state=0"+fileTypeIdsWhere+fileIdsWhere+" ORDER BY updated_at DESC");
+					int i = 1;
+					for (FileType a : FileType.values()) {
+						s.setInt(i++, a.getObj().getId());
+					}
+					for (Integer a : queue) {
+						s.setInt(i++, a);
+					}
+					
+					ResultSet r = s.executeQuery();
+					
+					while(r.next()) {
+						
+						logger.info("Looking at file with id "+r.getInt("id")+".");
+						
+						// check this file id is not in the queue. It shouldn't be. If it is then there was something wrong with the db query!
+						if (queue.contains(r.getInt("id"))) {
+							logger.error("A file id was retrieved from the database for processing but this id was already in the queue. This shouldn't happen because it should have been excluded in the database query.");
+							continue;
+						}
+						
+						// create File obj
+						File file = new File(r.getInt("id"), r.getString("filename"), r.getInt("size"), FileType.getFromId(r.getInt("file_type_id")));
+						queue.add(r.getInt("id"));
+						threadPool.execute(new Job(taskCompletionHandler, file));
+						logger.info("Created and scheduled process job for file with id "+r.getInt("id")+".");
+					}	
+				} catch (SQLException e) {
+					logger.error("SQLException when trying to query databases for files that need processing.");
+				}
+				logger.info("Finished polling.");
 			}
-			
-			// create File obj
-			File file = new File(fileId, "Name", 100, FileType.getFromId(3));
-			queue.add(5);
-			threadPool.execute(new Job(taskCompletionHandler, file));
-			
 		}
 		
 	}
@@ -73,8 +125,9 @@ public class JobPoller {
 		 * @param file
 		 */
 		public void markCompletion(int id) {
-			queue.remove(id);
-			System.out.println(id);
+			synchronized(lock1) {
+				queue.remove(id);
+			}
 		}
 	}
 	

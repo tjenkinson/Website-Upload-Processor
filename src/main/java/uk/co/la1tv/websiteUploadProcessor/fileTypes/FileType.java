@@ -1,7 +1,10 @@
 package uk.co.la1tv.websiteUploadProcessor.fileTypes;
 
 public enum FileType {
-	COVER_ART(new CoverArtFileType(3));
+	SIDE_BANNER_IMAGES(new SideBannersImageFileType(1)),
+	COVER_IMAGE(new CoverImageFileType(2)),
+	VOD_VIDEO(new VODVideoFileType(3)),
+	COVER_ART(new CoverArtFileType(4));
 	
 	private FileTypeAbstract instance;
 	
