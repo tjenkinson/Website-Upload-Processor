@@ -4,8 +4,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
-import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -38,8 +36,7 @@ public class JobPoller {
 	private Object lock1 = new Object();
 	
 	public JobPoller() {
-		logger.info("Loading Job Poller...");
-		
+		logger.info("Loading Job Poller...");	
 		config = Config.getInstance();
 		threadPool = Executors.newFixedThreadPool(config.getInt("general.noThreads"));
 		taskCompletionHandler = new TaskCompletionHandler();
@@ -55,36 +52,28 @@ public class JobPoller {
 			synchronized(lock1) {
 				Db db = DbHelper.getMainDb();
 				Connection dbConnection = db.getConnection();
+				String fileIdsWhere = null;
 				
-				// get list of file ids that should not be returned from queries because they are currently being processed
-				String fileIdsWhere = "";
-				if (queue.size() > 0) {
-					fileIdsWhere = " AND id NOT IN (";
-					for (int i=0; i<queue.size(); i++) {
+				fileIdsWhere = getfileIdsWhereString();
+				
+				// the ids of the file types that we know about.
+				// we are not interested in any other file type ids that aren't listed
+				// all file types in laravel should be duplicated here
+				String fileTypeIdsWhere = "";
+				if (FileType.values().length > 0) {
+					fileTypeIdsWhere = " AND file_type_id IN (";
+					for (int i=0; i<FileType.values().length; i++) {
 						if (i > 0) {
-							fileIdsWhere += ",";
+							fileTypeIdsWhere += ",";
 						}
-						fileIdsWhere += "?";
+						fileTypeIdsWhere += "?";
 					}
-					fileIdsWhere += ")";
+					fileTypeIdsWhere += ")";
 				}
 				
 				// look for files to process
+				logger.info("Polling for files that need processing...");
 				try {
-					
-					logger.info("Polling for files that need processing...");
-					String fileTypeIdsWhere = "";
-					if (FileType.values().length > 0) {
-						fileTypeIdsWhere = " AND file_type_id IN (";
-						for (int i=0; i<FileType.values().length; i++) {
-							if (i > 0) {
-								fileTypeIdsWhere += ",";
-							}
-							fileTypeIdsWhere += "?";
-						}
-						fileTypeIdsWhere += ")";
-					}
-					
 					PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE process_state=0 AND ready_for_delete=0"+fileTypeIdsWhere+fileIdsWhere+" ORDER BY updated_at DESC");
 					int i = 1;
 					for (FileType a : FileType.values()) {
@@ -93,11 +82,9 @@ public class JobPoller {
 					for (Integer a : queue) {
 						s.setInt(i++, a);
 					}
-					
 					ResultSet r = s.executeQuery();
 					
 					while(r.next()) {
-						
 						logger.info("Looking at file with id "+r.getInt("id")+".");
 						
 						// check this file id is not in the queue. It shouldn't be. If it is then there was something wrong with the db query!
@@ -117,12 +104,45 @@ public class JobPoller {
 				}
 				logger.info("Finished polling for files that need processing.");
 				
+				fileIdsWhere = getfileIdsWhereString();
 				logger.info("Polling for files pending deletion...");
+				try {
+					PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE ready_for_delete=1"+fileTypeIdsWhere+fileIdsWhere+" ORDER BY updated_at DESC");
+					int i = 1;
+					for (FileType a : FileType.values()) {
+						s.setInt(i++, a.getObj().getId());
+					}
+					for (Integer a : queue) {
+						s.setInt(i++, a);
+					}
+					ResultSet r = s.executeQuery();
+					while(r.next()) {
+						logger.info("Found file with id "+r.getInt("id")+" that is pending deletion.");
+					}
+					
+				} catch (SQLException e) {
+					logger.error("SQLException when trying to query databases for files that need deleting.");
+				}
 				
 				logger.info("Finished polling for files pending deletion.");
 			}
 		}
 		
+		// get string with placeholders for file ids that should not be returned from queries because they are currently being processed
+		private String getfileIdsWhereString() {
+			String fileIdsWhere = "";
+			if (queue.size() > 0) {
+				fileIdsWhere = " AND id NOT IN (";
+				for (int i=0; i<queue.size(); i++) {
+					if (i > 0) {
+						fileIdsWhere += ",";
+					}
+					fileIdsWhere += "?";
+				}
+				fileIdsWhere += ")";
+			}
+			return fileIdsWhere;
+		}
 	}
 	
 	private class TaskCompletionHandler implements CompletionHandlerI {
