@@ -39,9 +39,13 @@ public class App {
 		
 		Config config = Config.getInstance();
 		
+		// clean the working directory or create it if it doesn't exist
+		FileHelper.cleanWorkingDir();
+		
 		// connect to database and pass Db object to DbHelper so it can be retrieved from anywhere
 		DbHelper.setMainDb(new Db(config.getString("db.host"), config.getString("db.database"), config.getString("db.username"), config.getString("db.password")));
-
+		
+		// start the job poller
 		new JobPoller();
 	}
 }
