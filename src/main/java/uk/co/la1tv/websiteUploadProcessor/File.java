@@ -68,7 +68,11 @@ public class File {
 		}
 		logger.debug("Created folder for file in working directory.");
 		
-		type.process(new java.io.File(sourceFilePath), new java.io.File(fileWorkingDir), this);
+		boolean success = type.process(new java.io.File(sourceFilePath), new java.io.File(fileWorkingDir), this);
+		
+		
+		// TODO: update process_state in db
+		
 		
 		logger.debug("Removing files working directory...");
 		try {

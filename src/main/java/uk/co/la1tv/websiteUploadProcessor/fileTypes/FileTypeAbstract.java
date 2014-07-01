@@ -23,6 +23,7 @@ public abstract class FileTypeAbstract {
 	 * @param source: A io file object representing the source file's location.
 	 * @param workingDir: A io file object representing the location of this files working dir.
 	 * @param file: The actual file object.
+	 * @return true if succeeded or false otherwise
 	 */
-	public abstract void process(java.io.File source, java.io.File workingDir, File file);
+	public abstract boolean process(java.io.File source, java.io.File workingDir, File file);
 }
