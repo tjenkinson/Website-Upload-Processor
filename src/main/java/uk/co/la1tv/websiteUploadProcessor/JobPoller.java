@@ -62,7 +62,7 @@ public class JobPoller {
 			logger.info("Polling for files that need processing...");
 			try {
 				Connection dbConnection = db.getConnection();
-				PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE process_state=0 AND ready_for_delete=0"+getFileTypeIdsWhereString()+getfileIdsWhereString()+" ORDER BY updated_at DESC");
+				PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE process_state=0 AND ready_for_delete=0"+getFileTypeIdsWhereString()+getFileIdsWhereString()+" ORDER BY updated_at DESC");
 				int i = 1;
 				for (FileType a : FileType.values()) {
 					s.setInt(i++, a.getObj().getId());
@@ -98,7 +98,7 @@ public class JobPoller {
 			logger.info("Polling for files pending deletion...");
 			try {
 				Connection dbConnection = db.getConnection();
-				PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE ready_for_delete=1"+getfileIdsWhereString()+getfileIdsWhereString()+" ORDER BY updated_at DESC");
+				PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE ready_for_delete=1"+getFileTypeIdsWhereString()+getFileIdsWhereString()+" ORDER BY updated_at DESC");
 				int i = 1;
 				for (FileType a : FileType.values()) {
 					s.setInt(i++, a.getObj().getId());
@@ -109,6 +109,9 @@ public class JobPoller {
 				ResultSet r = s.executeQuery();
 				while(r.next()) {
 					logger.info("Found file with id "+r.getInt("id")+" that is pending deletion.");
+				
+					// TODO: delete file and remove record.
+				
 				}
 				
 			} catch (SQLException e) {
@@ -118,7 +121,7 @@ public class JobPoller {
 		}
 		
 		// get string with placeholders for file ids that should not be returned from queries because they are currently being processed
-		private String getfileIdsWhereString() {
+		private String getFileIdsWhereString() {
 			String fileIdsWhere = "";
 			if (queue.size() > 0) {
 				fileIdsWhere = " AND id NOT IN (";
