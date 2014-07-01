@@ -13,4 +13,11 @@ public class FileHelper {
 		char sep = System.getProperty("file.separator").charAt(0);
 		return path.replace(sep == '\\' ? '/' : '\\', sep);
 	}
+	
+	/**
+	 * Empties the working directory. Also creates it if it doesn't exist.
+	 */
+	public static void cleanWorkingDir() {
+		
+	}
 }
