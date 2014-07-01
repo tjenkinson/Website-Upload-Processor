@@ -1,5 +1,9 @@
 package uk.co.la1tv.websiteUploadProcessor;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -10,10 +14,12 @@ import java.util.TimerTask;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.log4j.Logger;
 
 import uk.co.la1tv.websiteUploadProcessor.fileTypes.FileType;
 import uk.co.la1tv.websiteUploadProcessor.helpers.DbHelper;
+import uk.co.la1tv.websiteUploadProcessor.helpers.FileHelper;
 
 /**
  * Scans the File table at set intervals looking for new files with file types that require processing.
@@ -82,7 +88,7 @@ public class JobPoller {
 					}
 					
 					// create File obj
-					File file = new File(r.getInt("id"), r.getString("filename"), r.getInt("size"), FileType.getFromId(r.getInt("file_type_id")));
+					File file = DbHelper.buildFileFromResult(r);
 					queue.add(r.getInt("id"));
 					threadPool.execute(new Job(taskCompletionHandler, file));
 					logger.info("Created and scheduled process job for file with id "+r.getInt("id")+".");
@@ -109,9 +115,32 @@ public class JobPoller {
 				ResultSet r = s.executeQuery();
 				while(r.next()) {
 					logger.info("Found file with id "+r.getInt("id")+" that is pending deletion.");
-				
-					// TODO: delete file and remove record.
-				
+					
+					// create File obj
+					File file = DbHelper.buildFileFromResult(r);
+					String sourceFilePath = FileHelper.getSourceFilePath(r.getInt("id"));
+					
+					// delete file
+					try {
+						if (Files.exists(Paths.get(sourceFilePath), LinkOption.NOFOLLOW_LINKS)) {
+							FileUtils.forceDelete(new java.io.File(sourceFilePath));
+						}
+						else {
+							logger.debug("File with id "+file.getId()+" which is marked for deletion could not be deleted because it doesn't exist!");
+						}
+						// remove record from db
+						PreparedStatement stmnt = dbConnection.prepareStatement("DELETE FROM files WHERE id=?");
+						stmnt.setInt(1, file.getId());
+						if (stmnt.executeUpdate() != 1) {
+							logger.error("Error when deleteing record from database for file with id "+file.getId()+".");
+						}
+						else {
+							logger.info("File with id "+r.getInt("id")+" deleted and removed from database.");
+						}
+						
+					} catch (IOException e) {
+						logger.error("Error deleting file with id "+file.getId()+" which was pending deletion.");
+					}
 				}
 				
 			} catch (SQLException e) {

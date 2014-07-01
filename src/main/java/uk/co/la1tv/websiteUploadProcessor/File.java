@@ -54,9 +54,8 @@ public class File {
 		
 		logger.info("Started processing file with id "+getId()+" and name '"+getName()+"'.");
 		logger.debug("Creating folder for file in working directory...");
-		String workingDir = FileHelper.format(config.getString("files.workingFilesLocation"));
-		String fileWorkingDir = FileHelper.format(workingDir+"/"+getId());
-		String sourceFilePath = FileHelper.format(config.getString("files.webappFilesLocation")+"/"+getId());
+		String fileWorkingDir = FileHelper.getFileWorkingDir(getId());
+		String sourceFilePath = FileHelper.getSourceFilePath(getId());
 		
 		try {
 			FileUtils.forceMkdir(new java.io.File(fileWorkingDir));

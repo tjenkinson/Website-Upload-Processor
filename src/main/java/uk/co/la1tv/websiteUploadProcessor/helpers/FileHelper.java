@@ -51,4 +51,16 @@ public class FileHelper {
 			logger.info("Created working directory.");
 		}
 	}
+	
+	public static String getWorkingDir() {
+		return FileHelper.format(Config.getInstance().getString("files.workingFilesLocation"));
+	}
+	
+	public static String getFileWorkingDir(int fileId) {
+		return FileHelper.format(FileHelper.getWorkingDir()+"/"+fileId);
+	}
+	
+	public static String getSourceFilePath(int fileId) {
+		return FileHelper.format(Config.getInstance().getString("files.webappFilesLocation")+"/"+fileId);
+	}
 }

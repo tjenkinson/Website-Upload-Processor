@@ -1,6 +1,11 @@
 package uk.co.la1tv.websiteUploadProcessor.helpers;
 
+import java.sql.ResultSet;
+import java.sql.SQLException;
+
 import uk.co.la1tv.websiteUploadProcessor.Db;
+import uk.co.la1tv.websiteUploadProcessor.File;
+import uk.co.la1tv.websiteUploadProcessor.fileTypes.FileType;
 
 public class DbHelper {
 	
@@ -23,6 +28,16 @@ public class DbHelper {
 	 */
 	public static Db getMainDb() {
 		return db;
+	}
+	
+	/**
+	 * Builds a file object from a result set's row.
+	 * @param r: The result set on the required row.
+	 * @return File: A File object representing the db record.
+	 * @throws SQLException
+	 */
+	public static File buildFileFromResult(ResultSet r) throws SQLException {
+		return new File(r.getInt("id"), r.getString("filename"), r.getInt("size"), FileType.getFromId(r.getInt("file_type_id")));
 	}
 	
 }
