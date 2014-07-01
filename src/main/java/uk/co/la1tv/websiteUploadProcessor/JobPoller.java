@@ -46,86 +46,75 @@ public class JobPoller {
 	}
 	
 	private class PollTask extends TimerTask {
-
+		
+		private Db db = DbHelper.getMainDb();
+		
 		@Override
 		public void run() {
 			synchronized(lock1) {
-				Db db = DbHelper.getMainDb();
-				Connection dbConnection = db.getConnection();
-				String fileIdsWhere = null;
-				
-				fileIdsWhere = getfileIdsWhereString();
-				
-				// the ids of the file types that we know about.
-				// we are not interested in any other file type ids that aren't listed
-				// all file types in laravel should be duplicated here
-				String fileTypeIdsWhere = "";
-				if (FileType.values().length > 0) {
-					fileTypeIdsWhere = " AND file_type_id IN (";
-					for (int i=0; i<FileType.values().length; i++) {
-						if (i > 0) {
-							fileTypeIdsWhere += ",";
-						}
-						fileTypeIdsWhere += "?";
-					}
-					fileTypeIdsWhere += ")";
-				}
-				
-				// look for files to process
-				logger.info("Polling for files that need processing...");
-				try {
-					PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE process_state=0 AND ready_for_delete=0"+fileTypeIdsWhere+fileIdsWhere+" ORDER BY updated_at DESC");
-					int i = 1;
-					for (FileType a : FileType.values()) {
-						s.setInt(i++, a.getObj().getId());
-					}
-					for (Integer a : queue) {
-						s.setInt(i++, a);
-					}
-					ResultSet r = s.executeQuery();
-					
-					while(r.next()) {
-						logger.info("Looking at file with id "+r.getInt("id")+".");
-						
-						// check this file id is not in the queue. It shouldn't be. If it is then there was something wrong with the db query!
-						if (queue.contains(r.getInt("id"))) {
-							logger.error("A file id was retrieved from the database for processing but this id was already in the queue. This shouldn't happen because it should have been excluded in the database query.");
-							continue;
-						}
-						
-						// create File obj
-						File file = new File(r.getInt("id"), r.getString("filename"), r.getInt("size"), FileType.getFromId(r.getInt("file_type_id")));
-						queue.add(r.getInt("id"));
-						threadPool.execute(new Job(taskCompletionHandler, file));
-						logger.info("Created and scheduled process job for file with id "+r.getInt("id")+".");
-					}	
-				} catch (SQLException e) {
-					logger.error("SQLException when trying to query databases for files that need processing.");
-				}
-				logger.info("Finished polling for files that need processing.");
-				
-				fileIdsWhere = getfileIdsWhereString();
-				logger.info("Polling for files pending deletion...");
-				try {
-					PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE ready_for_delete=1"+fileTypeIdsWhere+fileIdsWhere+" ORDER BY updated_at DESC");
-					int i = 1;
-					for (FileType a : FileType.values()) {
-						s.setInt(i++, a.getObj().getId());
-					}
-					for (Integer a : queue) {
-						s.setInt(i++, a);
-					}
-					ResultSet r = s.executeQuery();
-					while(r.next()) {
-						logger.info("Found file with id "+r.getInt("id")+" that is pending deletion.");
-					}
-					
-				} catch (SQLException e) {
-					logger.error("SQLException when trying to query databases for files that need deleting.");
-				}
-				
-				logger.info("Finished polling for files pending deletion.");
+				processFiles();
+				deleteFiles();
 			}
+		}
+		
+		// look for files to process kick of jobs to process them
+		private void processFiles() {
+			logger.info("Polling for files that need processing...");
+			try {
+				Connection dbConnection = db.getConnection();
+				PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE process_state=0 AND ready_for_delete=0"+getFileTypeIdsWhereString()+getfileIdsWhereString()+" ORDER BY updated_at DESC");
+				int i = 1;
+				for (FileType a : FileType.values()) {
+					s.setInt(i++, a.getObj().getId());
+				}
+				for (Integer a : queue) {
+					s.setInt(i++, a);
+				}
+				ResultSet r = s.executeQuery();
+				
+				while(r.next()) {
+					logger.info("Looking at file with id "+r.getInt("id")+".");
+					
+					// check this file id is not in the queue. It shouldn't be. If it is then there was something wrong with the db query!
+					if (queue.contains(r.getInt("id"))) {
+						logger.error("A file id was retrieved from the database for processing but this id was already in the queue. This shouldn't happen because it should have been excluded in the database query.");
+						continue;
+					}
+					
+					// create File obj
+					File file = new File(r.getInt("id"), r.getString("filename"), r.getInt("size"), FileType.getFromId(r.getInt("file_type_id")));
+					queue.add(r.getInt("id"));
+					threadPool.execute(new Job(taskCompletionHandler, file));
+					logger.info("Created and scheduled process job for file with id "+r.getInt("id")+".");
+				}	
+			} catch (SQLException e) {
+				logger.error("SQLException when trying to query databases for files that need processing.");
+			}
+			logger.info("Finished polling for files that need processing.");
+		}
+		
+		// look for files that are pending deletion and delete them.
+		private void deleteFiles() {
+			logger.info("Polling for files pending deletion...");
+			try {
+				Connection dbConnection = db.getConnection();
+				PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE ready_for_delete=1"+getfileIdsWhereString()+getfileIdsWhereString()+" ORDER BY updated_at DESC");
+				int i = 1;
+				for (FileType a : FileType.values()) {
+					s.setInt(i++, a.getObj().getId());
+				}
+				for (Integer a : queue) {
+					s.setInt(i++, a);
+				}
+				ResultSet r = s.executeQuery();
+				while(r.next()) {
+					logger.info("Found file with id "+r.getInt("id")+" that is pending deletion.");
+				}
+				
+			} catch (SQLException e) {
+				logger.error("SQLException when trying to query databases for files that need deleting.");
+			}
+			logger.info("Finished polling for files pending deletion.");
 		}
 		
 		// get string with placeholders for file ids that should not be returned from queries because they are currently being processed
@@ -142,6 +131,24 @@ public class JobPoller {
 				fileIdsWhere += ")";
 			}
 			return fileIdsWhere;
+		}
+		
+		private String getFileTypeIdsWhereString() {
+			// the ids of the file types that we know about.
+			// we are not interested in any other file type ids that aren't listed
+			// all file types in laravel should be duplicated here
+			String fileTypeIdsWhere = "";
+			if (FileType.values().length > 0) {
+				fileTypeIdsWhere = " AND file_type_id IN (";
+				for (int i=0; i<FileType.values().length; i++) {
+					if (i > 0) {
+						fileTypeIdsWhere += ",";
+					}
+					fileTypeIdsWhere += "?";
+				}
+				fileTypeIdsWhere += ")";
+			}
+			return fileTypeIdsWhere;
 		}
 	}
 	
