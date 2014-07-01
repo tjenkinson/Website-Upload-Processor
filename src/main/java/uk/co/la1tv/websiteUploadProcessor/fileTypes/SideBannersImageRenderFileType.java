@@ -12,7 +12,9 @@ public class SideBannersImageRenderFileType extends FileTypeAbstract {
 
 	private static Logger logger = Logger.getLogger(SideBannersImageRenderFileType.class);
 	
-	public void process(File file) {
+	@Override
+	public void process(java.io.File source, java.io.File workingDir, File file) {
+		// TODO Auto-generated method stub
 		
 	}
 }

@@ -1,8 +1,12 @@
 package uk.co.la1tv.websiteUploadProcessor;
 
+import java.io.IOException;
+
+import org.apache.commons.io.FileUtils;
 import org.apache.log4j.Logger;
 
 import uk.co.la1tv.websiteUploadProcessor.fileTypes.FileTypeAbstract;
+import uk.co.la1tv.websiteUploadProcessor.helpers.FileHelper;
 
 public class File {
 	
@@ -39,8 +43,41 @@ public class File {
 	}
 	
 	public void process() {
-		logger.info("Started processing file with id "+id+" and name '"+name+"'.");
-		type.process(this);
-		logger.info("Finished processing file with id "+id+" and name '"+name+"'.");
+		
+		Config config = Config.getInstance();
+		
+		logger.info("Started processing file with id "+getId()+" and name '"+getName()+"'.");
+		logger.debug("Creating folder for file in working directory...");
+		String workingDir = FileHelper.format(config.getString("files.workingFilesLocation"));
+		String fileWorkingDir = FileHelper.format(workingDir+"/"+getId());
+		String sourceFilePath = FileHelper.format(config.getString("files.webappFilesLocation")+"/"+getId());
+		
+		try {
+			FileUtils.forceMkdir(new java.io.File(fileWorkingDir));
+		} catch (IOException e) {
+			throw(new RuntimeException("Error creating folder for file to process."));
+		}
+		
+		if (config.getBoolean("general.workWithCopy")) {
+			try {
+				FileUtils.copyFileToDirectory(new java.io.File(sourceFilePath), new java.io.File(fileWorkingDir));
+			} catch (IOException e) {
+				logger.error("Error copying file with id "+getId()+" from web app files location to working directory.");
+				return;
+			}
+		}
+		logger.debug("Created folder for file in working directory.");
+		
+		type.process(new java.io.File(sourceFilePath), new java.io.File(fileWorkingDir), this);
+		
+		logger.debug("Removing files working directory...");
+		try {
+			FileUtils.deleteDirectory(new java.io.File(fileWorkingDir));
+			logger.debug("Removed files working directory.");
+		} catch (IOException e) {
+			logger.error("Error removing files working directory.");
+		}
+		
+		logger.info("Finished processing file with id "+getId()+" and name '"+getName()+"'.");
 	}
 }

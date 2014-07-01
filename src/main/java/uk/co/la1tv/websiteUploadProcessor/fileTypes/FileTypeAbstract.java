@@ -18,5 +18,11 @@ public abstract class FileTypeAbstract {
 		return id;
 	}
 	
-	public abstract void process(File file);
+	/**
+	 * Called when a file is ready to be processed.
+	 * @param source: A io file object representing the source file's location.
+	 * @param workingDir: A io file object representing the location of this files working dir.
+	 * @param file: The actual file object.
+	 */
+	public abstract void process(java.io.File source, java.io.File workingDir, File file);
 }

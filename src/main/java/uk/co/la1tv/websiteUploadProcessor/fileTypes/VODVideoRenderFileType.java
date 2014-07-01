@@ -11,8 +11,10 @@ public class VODVideoRenderFileType extends FileTypeAbstract {
 	}
 
 	private static Logger logger = Logger.getLogger(VODVideoRenderFileType.class);
-	
-	public void process(File file) {
+
+	@Override
+	public void process(java.io.File source, java.io.File workingDir, File file) {
+		// TODO Auto-generated method stub
 		
 	}
 }
