@@ -75,7 +75,7 @@ public class File {
 		
 		boolean success = type.process(new java.io.File(sourceFilePath), new java.io.File(fileWorkingDir), this);
 		if (!success) {
-			logger.error("An error occurred when trying to process file with id "+getId()+".");
+			logger.warn("An error occurred when trying to process file with id "+getId()+".");
 		}
 		
 		// update process_state in db
