@@ -1,6 +1,5 @@
 package uk.co.la1tv.websiteUploadProcessor.fileTypes;
 
-import java.io.InputStream;
 import java.util.List;
 
 import org.apache.log4j.Logger;
@@ -9,7 +8,6 @@ import uk.co.la1tv.websiteUploadProcessor.Config;
 import uk.co.la1tv.websiteUploadProcessor.File;
 import uk.co.la1tv.websiteUploadProcessor.helpers.GenericStreamMonitor;
 import uk.co.la1tv.websiteUploadProcessor.helpers.RuntimeHelper;
-import uk.co.la1tv.websiteUploadProcessor.helpers.StreamMonitor;
 
 public class VODVideoFileType extends FileTypeAbstract {
 	

@@ -8,7 +8,7 @@ import java.util.ArrayList;
 
 import org.apache.log4j.Logger;
 
-public class GenericStreamMonitor extends StreamMonitor {
+public class GenericStreamMonitor implements StreamMonitor {
 	
 	private static Logger logger = Logger.getLogger(GenericStreamMonitor.class);
 	
