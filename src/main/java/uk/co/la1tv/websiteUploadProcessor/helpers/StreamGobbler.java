@@ -25,6 +25,8 @@ public class StreamGobbler extends Thread {
 	
 	@Override
 	public void run() {
+		
+		logger.trace("StreamGobbler started.");
 		InputStreamReader isr = new InputStreamReader(is);
 		BufferedReader br = new BufferedReader(isr);
 		
@@ -42,5 +44,6 @@ public class StreamGobbler extends Thread {
 		} catch (IOException e) {
 			throw(new RuntimeException("Error occured when trying to read stream."));
 		}
+		logger.trace("StreamGobbler finished.");
 	}
 }
