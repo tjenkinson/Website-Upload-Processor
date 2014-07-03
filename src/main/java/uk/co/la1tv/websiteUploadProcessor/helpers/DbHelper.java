@@ -1,7 +1,11 @@
 package uk.co.la1tv.websiteUploadProcessor.helpers;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+
+import java.sql.Types;
 
 import uk.co.la1tv.websiteUploadProcessor.Db;
 import uk.co.la1tv.websiteUploadProcessor.File;
@@ -38,6 +42,32 @@ public class DbHelper {
 	 */
 	public static File buildFileFromResult(ResultSet r) throws SQLException {
 		return new File(r.getInt("id"), r.getString("filename"), r.getInt("size"), FileType.getFromId(r.getInt("file_type_id")));
+	}
+	
+	/**
+	 * Set the current processing message and/or percentage in the database for a file.
+	 * @param fileId: the file id in the database
+	 * @param msg: The message to set. null means no message.
+	 * @param percentage: The percentage of processing from 0-100. null means no percentage
+	 * @return boolean representing whether update successful.
+	 */
+	public static boolean updateStatus(int fileId, String msg, Integer percentage) {
+		Db db = DbHelper.getMainDb();
+		try {
+			Connection connection = db.getConnection();
+			PreparedStatement s = connection.prepareStatement("UPDATE files SET msg=?, process_percentage=? WHERE id=?");
+			s.setString(1, msg);
+			if (percentage != null) {
+				s.setInt(2, percentage);
+			}
+			else {
+				s.setNull(2, Types.INTEGER);
+			}
+			s.setInt(3, fileId);
+			return s.executeUpdate() == 1;
+		} catch (SQLException e) {
+			throw(new RuntimeException("Database error whilst trying to update process status."));
+		}
 	}
 	
 }

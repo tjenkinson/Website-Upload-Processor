@@ -56,6 +56,8 @@ public class File {
 		logger.debug("Creating folder for file in working directory...");
 		String fileWorkingDir = FileHelper.getFileWorkingDir(getId());
 		String sourceFilePath = FileHelper.getSourceFilePath(getId());
+		// the path to file that will be processed. (It might be copied to the working dir so this will be different to sourceFilePath)
+		String destinationSourceFilePath = fileWorkingDir;
 		
 		try {
 			FileUtils.forceMkdir(new java.io.File(fileWorkingDir));
@@ -65,7 +67,8 @@ public class File {
 		
 		if (config.getBoolean("general.workWithCopy")) {
 			try {
-				FileUtils.copyFileToDirectory(new java.io.File(sourceFilePath), new java.io.File(fileWorkingDir));
+				destinationSourceFilePath = FileHelper.format(fileWorkingDir+"/source");
+				FileUtils.copyFile(new java.io.File(sourceFilePath), new java.io.File(destinationSourceFilePath));
 			} catch (IOException e) {
 				logger.error("Error copying file with id "+getId()+" from web app files location to working directory.");
 				return;
@@ -73,7 +76,7 @@ public class File {
 		}
 		logger.debug("Created folder for file in working directory.");
 		
-		boolean success = type.process(new java.io.File(sourceFilePath), new java.io.File(fileWorkingDir), this);
+		boolean success = type.process(new java.io.File(sourceFilePath), new java.io.File(destinationSourceFilePath), this);
 		if (!success) {
 			logger.warn("An error occurred when trying to process file with id "+getId()+".");
 		}
