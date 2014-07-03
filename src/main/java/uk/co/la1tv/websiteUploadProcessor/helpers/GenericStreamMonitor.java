@@ -4,7 +4,6 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.util.ArrayList;
 
 import org.apache.log4j.Logger;
 
@@ -13,7 +12,7 @@ public class GenericStreamMonitor implements StreamMonitor {
 	private static Logger logger = Logger.getLogger(GenericStreamMonitor.class);
 	
 	private InputStream stream;
-	private ArrayList<String> lines = new ArrayList<String>();
+	private String output = "";
 	private Object lock = new Object();
 	
 	@Override
@@ -32,7 +31,7 @@ public class GenericStreamMonitor implements StreamMonitor {
 			while((line = br.readLine()) != null) {
 				logger.trace(line);
 				synchronized(lock) {
-					lines.add(line);
+					output += line+"\n";
 				}
 			}
 		} catch (IOException e) {
@@ -41,9 +40,9 @@ public class GenericStreamMonitor implements StreamMonitor {
 		logger.trace("GenericStreamMonitor finished.");
 	}
 	
-	public String[] getOutput() {
+	public String getOutput() {
 		synchronized(lock) {
-			return lines.toArray(new String[lines.size()]);
+			return output;
 		}
 	}
 

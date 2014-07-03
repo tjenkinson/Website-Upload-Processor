@@ -22,11 +22,17 @@ public class VODVideoFileType extends FileTypeAbstract {
 		Config config = Config.getInstance();
 		int exitVal;
 		
-		// TODO: get source file information
+		// get source file information. Get width and height and check that duration is more than 0
 		
 		GenericStreamMonitor streamMonitor = new GenericStreamMonitor();
 		
-		exitVal = RuntimeHelper.executeProgram(config.getString("ffmpeg.location")+" -version", workingDir, streamMonitor, null);
+		exitVal = RuntimeHelper.executeProgram(config.getString("ffmpeg.probeLocation")+" -v quiet -print_format json -show_format -show_streams \""+source.getAbsolutePath()+"\"", workingDir, streamMonitor, null);
+		if (exitVal != 0) {
+			logger.warn("Cannot process VOD file with id "+file.getId()+" because there is an error in the metadata.");
+			return false;
+		}
+		
+		String metadataStr = streamMonitor.getOutput();
 		
 		
 		//1080-4000, 720-2500, 480-700, 360-500
