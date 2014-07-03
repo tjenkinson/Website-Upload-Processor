@@ -33,13 +33,7 @@ public class StreamGobbler extends Thread {
 		String line = null;
 		try {
 			while((line = br.readLine()) != null) {
-				String msg = type.name()+": "+line;
-				if (type != StreamType.ERR) {
-					logger.trace(msg);
-				}
-				else {
-					logger.warn(msg);
-				}
+				logger.trace(type.name()+": "+line);
 			}
 		} catch (IOException e) {
 			throw(new RuntimeException("Error occured when trying to read stream."));

@@ -76,7 +76,7 @@ public class File {
 		}
 		logger.debug("Created folder for file in working directory.");
 		
-		boolean success = type.process(new java.io.File(sourceFilePath), new java.io.File(destinationSourceFilePath), this);
+		boolean success = type.process(new java.io.File(destinationSourceFilePath), new java.io.File(fileWorkingDir), this);
 		if (!success) {
 			logger.warn("An error occurred when trying to process file with id "+getId()+".");
 		}

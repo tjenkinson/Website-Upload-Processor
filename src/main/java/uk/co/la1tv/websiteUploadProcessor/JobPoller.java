@@ -100,6 +100,7 @@ public class JobPoller {
 		}
 		
 		// look for files that are pending deletion and delete them.
+		// TODO: also need to delete files that are not in_use
 		private void deleteFiles() {
 			logger.info("Polling for files pending deletion...");
 			try {
