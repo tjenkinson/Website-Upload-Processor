@@ -25,21 +25,29 @@ public class RuntimeHelper {
 			Runtime rt = Runtime.getRuntime();
 			Process proc = rt.exec(path, null, workingDir);
 			// consume the err stream and stdout stream from the process
+			Thread inputStreamThread;
 			if (inputStream != null) {
 				inputStream.setStream(proc.getInputStream());
-				new Thread(inputStream).start();
+				inputStreamThread = new Thread(inputStream);
 			}
 			else {
-				new StreamGobbler(proc.getInputStream(), StreamType.STDOUT).start(); // the input stream is the STDOUT from the program being executed
+				inputStreamThread = new StreamGobbler(proc.getInputStream(), StreamType.STDOUT); // the input stream is the STDOUT from the program being executed
 			}
+			inputStreamThread.start();
+			
+			Thread errStreamThread;
 			if (errStream != null) {
 				errStream.setStream(proc.getErrorStream());
-				new Thread(errStream).start();
+				errStreamThread = new Thread(errStream);
 			}
 			else {
-				new StreamGobbler(proc.getErrorStream(), StreamType.ERR).start();
+				errStreamThread = new StreamGobbler(proc.getErrorStream(), StreamType.ERR);
 			}
-	
+			errStreamThread.start();
+			
+			// wait make sure stream threads have finished collecting output
+			inputStreamThread.join();
+			errStreamThread.join();
 			exitVal = proc.waitFor();
 		
 		} catch (IOException e) {
