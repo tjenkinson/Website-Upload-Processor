@@ -23,6 +23,10 @@ public class VODVideoFileType extends FileTypeAbstract {
 		Config config = Config.getInstance();
 		int exitVal;
 		
+		// TODO: tmp for testing
+		if (true)
+		return false;
+		
 		// get source file information. Get width and height and check that duration is more than 0
 		
 		GenericStreamMonitor streamMonitor = new GenericStreamMonitor();
@@ -56,12 +60,12 @@ public class VODVideoFileType extends FileTypeAbstract {
 			int vBitrate = Integer.parseInt(a[2]);
 			
 			if (h > sourceFileH) {
-				// there's no point rendering to versions with a higher width than the source file
-				logger.debug("Not rendering width "+h+" because it is more than the source file's width.");
+				// there's no point rendering to versions with a larger height than the source file
+				logger.debug("Not rendering height "+h+" because it is more than the source file's height.");
 				continue;
 			}
 			
-			logger.debug("Executing ffmpeg for width "+h+" and audio bitrate "+aBitrate+"kbps, video bitrate "+vBitrate+"kbps.");
+			logger.debug("Executing ffmpeg for height "+h+" and audio bitrate "+aBitrate+"kbps, video bitrate "+vBitrate+"kbps.");
 			exitVal = RuntimeHelper.executeProgram("\""+config.getString("ffmpeg.location")+"\" -y -nostdin -i \""+source.getAbsolutePath()+"\" -vf scale=trunc(oh/a/2)*2:"+h+" -strict experimental -acodec aac -ab "+aBitrate+"k -ac 2 -ar 48000 -vcodec libx264 -vprofile main -g 48 -b:v "+vBitrate+"k -f mp4 output_"+h, workingDir, null, null);
 			if (exitVal == 0) {
 				logger.debug("ffmpeg finished successfully with error code "+exitVal+".");

@@ -99,13 +99,12 @@ public class JobPoller {
 			logger.info("Finished polling for files that need processing.");
 		}
 		
-		// look for files that are pending deletion and delete them.
-		// TODO: also need to delete files that are not in_use
+		// look for files that are pending deletion, or temporary and no longer belong to a session, and delete them.
 		private void deleteFiles() {
 			logger.info("Polling for files pending deletion...");
 			try {
 				Connection dbConnection = db.getConnection();
-				PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE ready_for_delete=1"+getFileTypeIdsWhereString()+getFileIdsWhereString()+" ORDER BY updated_at DESC");
+				PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE (ready_for_delete=1 OR (in_use=0 AND session_id IS NULL))"+getFileTypeIdsWhereString()+getFileIdsWhereString()+" ORDER BY updated_at DESC");
 				int i = 1;
 				for (FileType a : FileType.values()) {
 					s.setInt(i++, a.getObj().getId());

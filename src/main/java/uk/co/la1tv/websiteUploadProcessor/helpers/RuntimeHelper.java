@@ -19,6 +19,7 @@ public class RuntimeHelper {
 	 */
 	public static int executeProgram(String path, File workingDir, StreamMonitor inputStream, StreamMonitor errStream) {
 		logger.trace("Executing '"+path+"' with working dir '"+workingDir.getAbsolutePath()+"'.");
+		
 		int exitVal;
 		try {
 			Runtime rt = Runtime.getRuntime();
