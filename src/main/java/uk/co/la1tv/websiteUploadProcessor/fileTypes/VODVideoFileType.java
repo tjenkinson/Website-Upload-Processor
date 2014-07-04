@@ -47,15 +47,11 @@ public class VODVideoFileType extends FileTypeAbstract {
 		// the output from ffmpegprobe should be pure json
 		JSONObject metadata;
 		
-		String tmp = streamMonitor.getOutput();
 		try {
-			
-			metadata = new JSONObject(tmp);
+			metadata = new JSONObject(streamMonitor.getOutput());
 		}
 		catch(JSONException e) {
 			logger.warn("Error parsing JSON from ffmpegprobe.");
-			System.out.println(tmp);
-			System.exit(1); // TODO: remove
 			return false;
 		}
 		
