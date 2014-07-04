@@ -1,16 +1,18 @@
 package uk.co.la1tv.websiteUploadProcessor.fileTypes;
 
+import java.io.IOException;
 import java.sql.Connection;
-import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
-import java.util.Calendar;
+import java.util.ArrayList;
 import java.util.List;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.log4j.Logger;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import uk.co.la1tv.websiteUploadProcessor.Config;
@@ -43,7 +45,14 @@ public class VODVideoFileType extends FileTypeAbstract {
 		}
 		
 		// the output from ffmpegprobe should be pure json
-		JSONObject metadata = new JSONObject(streamMonitor.getOutput());
+		JSONObject metadata;
+		try {
+			metadata = new JSONObject(streamMonitor.getOutput());
+		}
+		catch(JSONException e) {
+			logger.warn("Error parsing JSON from ffmpegprobe.");
+			return false;
+		}
 		
 		// check the duration is more than 0
 		if (Double.parseDouble(metadata.getJSONObject("format").getString("duration")) == 0) {
@@ -53,31 +62,51 @@ public class VODVideoFileType extends FileTypeAbstract {
 		
 		// get video height
 		int sourceFileH = metadata.getJSONArray("streams").getJSONObject(0).getInt("height");
-		List<Object> formats = config.getList("encoding.formats");
+		List<Object> allFormats = config.getList("encoding.formats");
 		
-		boolean success = true;
-		// loop through different formats and render videos for ones that are applicable
-		for (Object f : formats) {
-			
-			// TODO: check if file is now marked for deletion
-			
+		ArrayList<Format> formats = new ArrayList<Format>();
+		
+		for (Object f : allFormats) {
 			String[] a = ((String) f).split("-");
+			int fileTypeId = Integer.parseInt(a[0]);
 			int h = Integer.parseInt(a[1]);
 			h += h%2; // height (and width) must be multiple of 2 for libx codec
 			int aBitrate = Integer.parseInt(a[2]);
 			int vBitrate = Integer.parseInt(a[3]);
-			
 			if (h > sourceFileH) {
 				// there's no point rendering to versions with a larger height than the source file
 				logger.debug("Not rendering height "+h+" because it is more than the source file's height.");
 				continue;
 			}
+			formats.add(new Format(fileTypeId, h, aBitrate, vBitrate));
+		}
+		
+		Connection dbConnection = DbHelper.getMainDb().getConnection();
+		boolean success = true;
+		// loop through different formats and render videos for ones that are applicable
+		for (Format f : formats) {
 			
-			logger.debug("Executing ffmpeg for height "+h+" and audio bitrate "+aBitrate+"kbps, video bitrate "+vBitrate+"kbps.");
+			// check if file is now marked for deletion
+			try {
+				PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE id=?");
+				s.setInt(1, file.getId());
+				ResultSet r = s.executeQuery();
+				if (!r.next()) {
+					logger.warn("File record could not be found when checking to see if file has now been deleted for file with id "+file.getId()+".");
+				}
+				if (r.getBoolean("ready_for_delete")) {
+					logger.debug("VOD with id "+file.getId()+" has been marked for deletion so not processing any more.");
+					return false;
+				}
+			} catch (SQLException e) {
+				throw(new RuntimeException("SQL error when trying to check if file still hasn't been deleted."));
+			}
 			
-			String outputFileLocation = FileHelper.format(workingDir.getAbsolutePath()+"/")+"output_"+h;
-			//exitVal = RuntimeHelper.executeProgram("\""+config.getString("ffmpeg.location")+"\" -y -nostdin -i \""+source.getAbsolutePath()+"\" -vf scale=trunc(oh/a/2)*2:"+h+" -strict experimental -acodec aac -ab "+aBitrate+"k -ac 2 -ar 48000 -vcodec libx264 -vprofile main -g 48 -b:v "+vBitrate+"k -f mp4 \""+outputFileLocation+"\"", workingDir, null, null);
-			exitVal = 0; // TODO: for testing only
+			
+			logger.debug("Executing ffmpeg for height "+f.h+" and audio bitrate "+f.aBitrate+"kbps, video bitrate "+f.vBitrate+"kbps.");
+			
+			String outputFileLocation = FileHelper.format(workingDir.getAbsolutePath()+"/")+"output_"+f.h;
+			exitVal = RuntimeHelper.executeProgram("\""+config.getString("ffmpeg.location")+"\" -y -nostdin -i \""+source.getAbsolutePath()+"\" -vf scale=trunc(oh/a/2)*2:"+f.h+" -strict experimental -acodec aac -ab "+f.aBitrate+"k -ac 2 -ar 48000 -vcodec libx264 -vprofile main -g 48 -b:v "+f.vBitrate+"k -f mp4 \""+outputFileLocation+"\"", workingDir, null, null);
 			if (exitVal == 0) {
 				logger.debug("ffmpeg finished successfully with error code "+exitVal+".");
 			}
@@ -93,31 +122,23 @@ public class VODVideoFileType extends FileTypeAbstract {
 		
 		
 		// this order is important to make sure if anything goes wrong there aren't any files left in the webapp files folder without a corresponding entry in the db
-		// - create entries in Files with in_use set to 0
-		Connection dbConnection = DbHelper.getMainDb().getConnection();
-		int[] newFileIds = new int[formats.size()];
 		
+		// create entries in Files with in_use set to 0
+		// and copy files accross to web app
 		try {
-		
-			for (int i=0; i<formats.size(); i++) {
-				Object f = formats.get(i);
+			for (Format f : formats) {
 				
-				String[] a = ((String) f).split("-");
-				
-				// TODO: these are repeated in both loops. could be cleaned up
-				int fileTypeId = Integer.parseInt(a[0]);
-				int h = Integer.parseInt(a[1]);
-				java.io.File outputFile = new java.io.File(FileHelper.format(workingDir.getAbsolutePath()+"/")+"output_"+h);
+				java.io.File outputFile = new java.io.File(FileHelper.format(workingDir.getAbsolutePath()+"/")+"output_"+f.h);
 				long size = outputFile.length(); // size of file in bytes
 				
-				PreparedStatement s;
+				logger.debug("Creating file record for render with height "+f.h+" belonging to source file with id "+file.getId());
+
 				Timestamp currentTimestamp = new Timestamp(System.currentTimeMillis());
-				// TODO: created_at and updated_at
-				s = dbConnection.prepareStatement("INSERT INTO files (in_use,created_at,updated_at,size,file_type_id,source_file_id,process_state) VALUES(0,?,?,?,?,?,1)", Statement.RETURN_GENERATED_KEYS);
+				PreparedStatement s = dbConnection.prepareStatement("INSERT INTO files (in_use,created_at,updated_at,size,file_type_id,source_file_id,process_state) VALUES(0,?,?,?,?,?,1)", Statement.RETURN_GENERATED_KEYS);
 				s.setTimestamp(1, currentTimestamp);
 				s.setTimestamp(2, currentTimestamp);
 				s.setLong(3, size);
-				s.setInt(4, fileTypeId);
+				s.setInt(4, f.fileTypeId);
 				s.setInt(5, file.getId());
 				if (s.executeUpdate() != 1) {
 					logger.warn("Error occurred when creating database entry for a file.");
@@ -125,35 +146,68 @@ public class VODVideoFileType extends FileTypeAbstract {
 				}
 				ResultSet generatedKeys = s.getGeneratedKeys();
 				generatedKeys.next();
-				int newId = generatedKeys.getInt(1);
-				newFileIds[i] = newId;
-				logger.info("File record created with id "+newId+" for render with height "+h+" belonging to source file with id "+file.getId());
+				f.id = generatedKeys.getInt(1);
+				logger.info("File record created with id "+f.id+" for render with height "+f.h+" belonging to source file with id "+file.getId());
 				
+				// copy file to server
+				logger.info("Moving output file with id "+f.id+" to web app...");
+				try {
+					FileUtils.copyFile(outputFile, new java.io.File(FileHelper.format(config.getString("files.webappFilesLocation")+"/"+f.id)));
+				} catch (IOException e) {
+					throw(new RuntimeException("Error moving output file to webapp."));
+				}
+				logger.info("Output file with id "+f.id+" moved to web app.");
 			}
 		} catch (SQLException e) {
+			throw(new RuntimeException("Error trying to register files in database."));
+		}
+		
+		try {
+			logger.debug("Marking rendered file with id as "+file.getId()+" as in_use.");
+
+			// start transaction
+			dbConnection.prepareStatement("START TRANSACTION").executeUpdate();
+			for (Format f : formats) {
+				PreparedStatement s = dbConnection.prepareStatement("UPDATE files SET in_use=1 WHERE id=?");
+				s.setInt(1, f.id);
+				
+				if (s.executeUpdate() != 1) {
+					dbConnection.prepareStatement("ROLLBACK").executeUpdate();
+					logger.debug("Error marking rendered file with id as "+file.getId()+" as in_use. Rolled back transaction.");
+					return false;
+				}
+			}
+			//TODO: still need to create entry in video_files here
+			dbConnection.prepareStatement("COMMIT").executeUpdate();
+		} catch (SQLException e) {
+			// rollback transaction
+			try {
+				dbConnection.prepareStatement("ROLLBACK").executeUpdate();
+			} catch (SQLException e1) {
+				logger.trace("Transaction failed to be rolled back. Can happen if transaction failed to start.");
+			}
 			e.printStackTrace();
 			throw(new RuntimeException("Error trying to register files in database."));
 		}
 		
-
-		// TODO: temporary for testing
-		System.exit(1);
+		logger.debug("Marked all files as in_use and created entry in video_files table.");
 		
-		// - copy files across to web server
-		
-		
-		// - check files there
-		
-		
-		// - start transaction
-		
-		// - update in_use to 1 for new files (in transaction so if anything fails, all the files will be deleted)
-		// - create entry in video_files table
-		// - update process_state
-		// - commit transaction
-		
-		// TODO: if successful copy files to web server and create file entries in db and do the rest of the db stuff that's needed
 		return success;
 	}
-
+		
+	private class Format {
+		
+		public Format(int fileTypeId, int h, int aBitrate, int vBitrate) {
+			this.fileTypeId = fileTypeId;
+			this.h = h;
+			this.aBitrate = aBitrate;
+			this.vBitrate = vBitrate;
+		}
+		
+		public int h;
+		public int aBitrate;
+		public int vBitrate;
+		public int fileTypeId;
+		public int id;
+	}
 }

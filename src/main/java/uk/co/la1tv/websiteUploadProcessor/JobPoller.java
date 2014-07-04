@@ -101,6 +101,9 @@ public class JobPoller {
 		
 		// look for files that are pending deletion, or temporary and no longer belong to a session, and delete them.
 		private void deleteFiles() {
+			
+			// TODO: need to check if has source files and remove those as well
+			
 			logger.info("Polling for files pending deletion...");
 			try {
 				Connection dbConnection = db.getConnection();

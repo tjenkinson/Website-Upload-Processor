@@ -95,7 +95,7 @@ public class File {
 			// check that ready_for_delete is still 0.
 			else {
 				if (r.getInt("ready_for_delete") == 1) {
-					logger.debug("The file with id "+getId()+"has been processed but during this time it has been marked for deletion. Updating process_state anyway.");
+					logger.debug("The file with id "+getId()+" has been processed but during this time it has been marked for deletion. Updating process_state anyway.");
 				}
 				// update process_state
 				s = dbConnection.prepareStatement("UPDATE files SET process_state=? WHERE id=?");
