@@ -59,8 +59,8 @@ public class JobPoller {
 		@Override
 		public void run() {
 			synchronized(lock1) {
-				processFiles();
 				deleteFiles();
+				processFiles();
 			}
 		}
 		

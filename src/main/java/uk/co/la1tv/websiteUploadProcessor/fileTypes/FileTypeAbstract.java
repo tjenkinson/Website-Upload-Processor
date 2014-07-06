@@ -1,5 +1,8 @@
 package uk.co.la1tv.websiteUploadProcessor.fileTypes;
 
+import java.util.HashSet;
+import java.util.Set;
+
 import uk.co.la1tv.websiteUploadProcessor.File;
 
 public abstract class FileTypeAbstract {
@@ -23,7 +26,7 @@ public abstract class FileTypeAbstract {
 	 * @param source: A io file object representing the source file's location.
 	 * @param workingDir: A io file object representing the location of this files working dir.
 	 * @param file: The actual file object.
-	 * @return true if succeeded or false otherwise
+	 * @return null if error processing or set of ids to mark as in_use when process is marked as completed
 	 */
-	public abstract boolean process(java.io.File source, java.io.File workingDir, File file);
+	public abstract Set<Integer> process(java.io.File source, java.io.File workingDir, File file);
 }

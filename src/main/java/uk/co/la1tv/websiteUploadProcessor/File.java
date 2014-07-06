@@ -5,6 +5,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.Set;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.log4j.Logger;
@@ -87,15 +88,17 @@ public class File {
 			}
 		}
 		
-		boolean success = type.process(new java.io.File(destinationSourceFilePath), new java.io.File(fileWorkingDir), this);
-		if (!success) {
+		Set<Integer> fileIdsToMarkInUse = type.process(new java.io.File(destinationSourceFilePath), new java.io.File(fileWorkingDir), this);
+		if (fileIdsToMarkInUse == null) {
 			logger.warn("An error occurred when trying to process file with id "+getId()+".");
 		}
 		
-		// update process_state in db
+		// update process_state in db and mark files as in_use
+		Connection dbConnection = DbHelper.getMainDb().getConnection();
 		logger.debug("Updating process_state in database...");
 		try {
-			Connection dbConnection = DbHelper.getMainDb().getConnection();
+			logger.trace("Starting database transaction.");
+			dbConnection.prepareStatement("START TRANSACTION").executeUpdate();
 			PreparedStatement s;
 			s = dbConnection.prepareStatement("SELECT * FROM files WHERE id=?");
 			s.setInt(1, getId());
@@ -108,21 +111,61 @@ public class File {
 				if (r.getInt("ready_for_delete") == 1) {
 					logger.debug("The file with id "+getId()+" has been processed but during this time it has been marked for deletion. Updating process_state anyway.");
 				}
+				
+				
+				if (fileIdsToMarkInUse != null && fileIdsToMarkInUse.size() > 0) {
+					
+					String query = "UPDATE files SET in_use=1 WHERE id IN (";
+					
+					for (int i=0; i<fileIdsToMarkInUse.size(); i++) {
+						if (i > 0) {
+							query += ",";
+						}
+						query += "?";
+					}
+					query += ")";
+					s = dbConnection.prepareStatement(query);
+					{
+						int i=1;
+						for(Integer id : fileIdsToMarkInUse) {
+							s.setInt(i++, id);
+						}
+					}
+					if (s.executeUpdate() != fileIdsToMarkInUse.size()) {
+						logger.error("Error occurred setting in_use to 1. Processing will be marked as failing.");
+						// rollback to make sure if some were marked as in_use they all get reverted back
+						dbConnection.prepareStatement("ROLLBACK").executeUpdate();
+						// start another transaction because rest of code in this try catch block is expecting transaction
+						dbConnection.prepareStatement("START TRANSACTION").executeUpdate();
+						// causes processing to be marked as failure
+						fileIdsToMarkInUse = null;
+					}
+				}
+				
+				
 				// update process_state
 				s = dbConnection.prepareStatement("UPDATE files SET process_state=? WHERE id=?");
-				s.setInt(1, success ? 1 : 2); // a value of 1 represents success, 2 represents failure
+				s.setInt(1, fileIdsToMarkInUse != null ? 1 : 2); // a value of 1 represents success, 2 represents failure
 				s.setInt(2, getId());
 				if (s.executeUpdate() != 1) {
+					logger.trace("Rolling back database transaction.");
+					dbConnection.prepareStatement("ROLLBACK").executeUpdate();
 					logger.error("Error occurred updating process_state for file with id "+getId()+".");
 				}
 				else {
+					logger.trace("Commiting database transaction.");
+					dbConnection.prepareStatement("COMMIT").executeUpdate();
 					logger.debug("Updated process_state in database.");
 				}
 			}
 		} catch (SQLException e) {
-			logger.error("Error querying database in order to update file process_state for file with id "+getId()+".");
+			try {
+				dbConnection.prepareStatement("ROLLBACK").executeUpdate();
+			} catch (SQLException e1) {
+				logger.debug("Transaction failed to be rolled back. This is possible if the reason is that the transaction failed to start in the first place.");
+			}
+			logger.error("Error querying database in order to update file process_state for file with id "+getId()+" and mark files as in_use.");
 		}
-		
 		
 		logger.debug("Removing files working directory...");
 		try {

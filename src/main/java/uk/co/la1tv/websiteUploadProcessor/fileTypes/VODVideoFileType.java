@@ -8,6 +8,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 
 import org.apache.commons.io.FileUtils;
@@ -30,22 +31,24 @@ public class VODVideoFileType extends FileTypeAbstract {
 	private static Logger logger = Logger.getLogger(VODVideoFileType.class);
 
 	@Override
-	public boolean process(java.io.File source, java.io.File workingDir, File file) {
+	public HashSet<Integer> process(java.io.File source, java.io.File workingDir, File file) {
 		Config config = Config.getInstance();
 		int exitVal;
+		// ids of files that should be marked in_use when the process_state is updated at the end of processing
+		HashSet<Integer> fileIdsToMarkInUse = new HashSet<Integer>();
 		FfmpegFileInfo info;
 		
 		// get source file information.
 		info = FfmpegHelper.getFileInfo(source, workingDir);
 		if (info == null) {
 			logger.warn("Error retrieving info for file with id "+file.getId()+".");
-			return false;
+			return null;
 		}
 		
 		// check the duration is more than 0
 		if (info.getDuration() == 0) {
 			logger.warn("Cannot process VOD file with id "+file.getId()+" because it's duration is 0.");
-			return false;
+			return null;
 		}
 		
 		// get video height
@@ -71,7 +74,6 @@ public class VODVideoFileType extends FileTypeAbstract {
 		ArrayList<OutputFile> outputFiles = new ArrayList<OutputFile>();
 		
 		Connection dbConnection = DbHelper.getMainDb().getConnection();
-		boolean success = true;
 		// loop through different formats and render videos for ones that are applicable
 		for (Format f : formats) {
 			
@@ -85,12 +87,11 @@ public class VODVideoFileType extends FileTypeAbstract {
 				}
 				if (r.getBoolean("ready_for_delete")) {
 					logger.debug("VOD with id "+file.getId()+" has been marked for deletion so not processing any more.");
-					return false;
+					return null;
 				}
 			} catch (SQLException e) {
 				throw(new RuntimeException("SQL error when trying to check if file still hasn't been deleted."));
 			}
-			
 			
 			logger.debug("Executing ffmpeg for height "+f.h+" and audio bitrate "+f.aBitrate+"kbps, video bitrate "+f.vBitrate+"kbps.");
 			
@@ -103,8 +104,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 				logger.warn("ffmpeg finished but returned error code "+exitVal+".");
 				// if any renders fail fail the whole thing.
 				// already rendered files will be cleaned up later because the working directory is cleared
-				success = false;
-				break;
+				return null;
 			}
 		}
 		
@@ -130,19 +130,22 @@ public class VODVideoFileType extends FileTypeAbstract {
 				s.setInt(5, file.getId());
 				if (s.executeUpdate() != 1) {
 					logger.warn("Error occurred when creating database entry for a file.");
-					return false;
+					return null;
 				}
 				ResultSet generatedKeys = s.getGeneratedKeys();
 				generatedKeys.next();
 				f.id = generatedKeys.getInt(1);
 				logger.debug("File record created with id "+f.id+" for render with height "+f.h+" belonging to source file with id "+file.getId()+".");
 				
+				// add to set of files to mark in_use when processing completed
+				fileIdsToMarkInUse.add(f.id);
+				
 				// add entry to OutputFiles array which will be used to populate VideoFiles table later
 				// get width and height of output
 				info = FfmpegHelper.getFileInfo(outputFile, workingDir);
 				if (info == null) {
 					logger.warn("Error retrieving info for file rendered from source file with id "+file.getId()+".");
-					return false;
+					return null;
 				}
 				outputFiles.add(new OutputFile(f.id, info.getW(), info.getH(), f.qualityDefinitionId));
 				
@@ -160,21 +163,6 @@ public class VODVideoFileType extends FileTypeAbstract {
 		}
 		
 		try {
-			logger.debug("Marking rendered file with id as "+file.getId()+" as in_use.");
-
-			// start transaction
-			dbConnection.prepareStatement("START TRANSACTION").executeUpdate();
-			for (Format f : formats) {
-				PreparedStatement s = dbConnection.prepareStatement("UPDATE files SET in_use=1 WHERE id=?");
-				s.setInt(1, f.id);
-				
-				if (s.executeUpdate() != 1) {
-					dbConnection.prepareStatement("ROLLBACK").executeUpdate();
-					logger.debug("Error marking rendered file with id as "+file.getId()+" as in_use. Rolled back transaction.");
-					return false;
-				}
-			}
-			
 			// create entries in video_files
 			logger.debug("Creating entries in video_files table...");
 			for (OutputFile o : outputFiles) {
@@ -189,26 +177,16 @@ public class VODVideoFileType extends FileTypeAbstract {
 				if (s.executeUpdate() != 1) {
 					dbConnection.prepareStatement("ROLLBACK").executeUpdate();
 					logger.debug("Error registering file with id "+o.id+" in video_files table. Rolled back transaction.");
-					return false;
+					return null;
 				}
 				logger.debug("Created entry in video_files table for file with id "+o.id+".");
 			}
 			logger.debug("Created entries in video_files table.");
-			
-			dbConnection.prepareStatement("COMMIT").executeUpdate();
 		} catch (SQLException e) {
-			// rollback transaction
-			try {
-				dbConnection.prepareStatement("ROLLBACK").executeUpdate();
-			} catch (SQLException e1) {
-				logger.trace("Transaction failed to be rolled back. Can happen if transaction failed to start.");
-			}
-			e.printStackTrace();
-			throw(new RuntimeException("Error trying to register files in database."));
+			throw(new RuntimeException("Error trying to create entries in video_files."));
 		}
 		
-		logger.debug("Marked all files as in_use and created entry in video_files table.");
-		return success;
+		return fileIdsToMarkInUse;
 	}
 		
 	private class Format {
