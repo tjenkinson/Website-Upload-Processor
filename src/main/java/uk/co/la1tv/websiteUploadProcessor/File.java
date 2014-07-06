@@ -169,7 +169,7 @@ public class File {
 		
 		logger.debug("Removing files working directory...");
 		try {
-			FileUtils.deleteDirectory(new java.io.File(fileWorkingDir));
+			FileUtils.forceDelete(new java.io.File(fileWorkingDir));
 			logger.debug("Removed files working directory.");
 		} catch (IOException e) {
 			logger.error("Error removing files working directory.");
