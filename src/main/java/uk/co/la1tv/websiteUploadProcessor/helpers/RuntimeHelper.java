@@ -51,6 +51,7 @@ public class RuntimeHelper {
 			exitVal = proc.waitFor();
 		
 		} catch (IOException e) {
+			e.printStackTrace();
 			throw(new RuntimeException("Error trying to execute program."));
 		} catch (InterruptedException e) {
 			throw(new RuntimeException("InterruptException occured. This shouldn't happen."));
