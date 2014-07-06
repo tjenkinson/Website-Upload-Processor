@@ -8,7 +8,10 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ExecutorService;
@@ -68,7 +71,7 @@ public class JobPoller {
 			logger.info("Polling for files that need processing...");
 			try {
 				Connection dbConnection = db.getConnection();
-				PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE process_state=0 AND ready_for_delete=0"+getFileTypeIdsWhereString()+getFileIdsWhereString()+" ORDER BY updated_at DESC");
+				PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE process_state=0 AND ready_for_delete=0"+getFileTypeIdsWhereString("file_type_id")+getFileIdsWhereString("id")+" ORDER BY updated_at DESC");
 				int i = 1;
 				for (FileType a : FileType.values()) {
 					s.setInt(i++, a.getObj().getId());
@@ -102,12 +105,11 @@ public class JobPoller {
 		// look for files that are pending deletion, or temporary and no longer belong to a session, and delete them.
 		private void deleteFiles() {
 			
-			// TODO: need to check if has source files and remove those as well
-			
 			logger.info("Polling for files pending deletion...");
 			try {
 				Connection dbConnection = db.getConnection();
-				PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE (ready_for_delete=1 OR (in_use=0 AND session_id IS NULL))"+getFileTypeIdsWhereString()+getFileIdsWhereString()+" ORDER BY updated_at DESC");
+				// the ordering makes sure that records with source_file_id set appear first. As these must be deleted first
+				PreparedStatement s = dbConnection.prepareStatement("SELECT o.id, o.filename, o.size, o.file_type_id, i.id, i.filename, i.size, i.file_type_id FROM files AS o LEFT JOIN files AS i ON i.source_file_id = o.id WHERE (o.ready_for_delete=1 OR (o.in_use=0 AND o.session_id IS NULL))"+getFileTypeIdsWhereString("o.file_type_id")+getFileIdsWhereString("o.id")+" ORDER BY (CASE WHEN i.id IS NULL THEN 1 ELSE 0 END) ASC");
 				int i = 1;
 				for (FileType a : FileType.values()) {
 					s.setInt(i++, a.getObj().getId());
@@ -116,47 +118,70 @@ public class JobPoller {
 					s.setInt(i++, a);
 				}
 				ResultSet r = s.executeQuery();
+				ArrayList<File> recordsToDelete = new ArrayList<File>();
 				while(r.next()) {
-					logger.info("Found file with id "+r.getInt("id")+" that is pending deletion.");
+					if (r.getInt("i.id") == 0) { // 0 means NULL
+						logger.info("Found file with id "+r.getInt("o.id")+" that is pending deletion.");
+					}
+					else {
+						logger.info("Found file with id "+r.getInt("o.id")+" with parent "+r.getInt("i.id")+" that is pending deletion. Both files will be deleted.");
+					}
 					
-					// create File obj
-					File file = DbHelper.buildFileFromResult(r);
-					String sourceFilePath = FileHelper.getSourceFilePath(r.getInt("id"));
-					
+					File f;
+					if (r.getInt("i.id") != 0) { // 0 returned if NULL
+						f = new File(r.getInt("i.id"), r.getString("i.filename"), r.getInt("i.size"), FileType.getFromId(r.getInt("i.file_type_id")));
+						if (!recordsToDelete.contains(f)) {
+							recordsToDelete.add(0, f);
+						}
+					}
+					f = new File(r.getInt("o.id"), r.getString("o.filename"), r.getInt("o.size"), FileType.getFromId(r.getInt("o.file_type_id")));		
+					if (!recordsToDelete.contains(f)) {
+						recordsToDelete.add(f);
+					}
+				}
+				
+				// delete actual files
+				for(File file : recordsToDelete) {
+					String sourceFilePath = FileHelper.getSourceFilePath(file.getId());	
 					// delete file
 					try {
 						if (Files.exists(Paths.get(sourceFilePath), LinkOption.NOFOLLOW_LINKS)) {
 							FileUtils.forceDelete(new java.io.File(sourceFilePath));
+							logger.debug("Deleted file with id "+file.getId()+".");
 						}
 						else {
-							logger.debug("File with id "+file.getId()+" which is marked for deletion could not be deleted because it doesn't exist!");
+							logger.debug("File with id "+file.getId()+" which is marked for deletion could not be deleted because it doesn't exist! Just removing record. This is possible if a file failed to copy accross after it's record was created.");
 						}
-						// remove record from db
-						PreparedStatement stmnt = dbConnection.prepareStatement("DELETE FROM files WHERE id=?");
-						stmnt.setInt(1, file.getId());
-						if (stmnt.executeUpdate() != 1) {
-							logger.error("Error when deleteing record from database for file with id "+file.getId()+".");
-						}
-						else {
-							logger.info("File with id "+r.getInt("id")+" deleted and removed from database.");
-						}
-						
 					} catch (IOException e) {
 						logger.error("Error deleting file with id "+file.getId()+" which was pending deletion.");
 					}
 				}
 				
+				// now remove records from database
+				// TODO: probably a more efficient way of doing this
+				// tried doing WHERE IN with the ids in order but still was getting integrity constraint error. Maybe it doesn't necessarily process them in order specified in the IN section?
+				if (recordsToDelete.size() > 0) {
+					for (File f : recordsToDelete) {
+						s = dbConnection.prepareStatement("DELETE FROM files WHERE id=?");
+						s.setInt(1, f.getId());
+						if (s.executeUpdate() != 1) {
+							throw(new RuntimeException("Error occurred whilst deleting file record with id "+f.getId()+"."));
+						}
+					}
+				}
+				
 			} catch (SQLException e) {
+				e.printStackTrace();
 				logger.error("SQLException when trying to query databases for files that need deleting.");
 			}
 			logger.info("Finished polling for files pending deletion.");
 		}
 		
 		// get string with placeholders for file ids that should not be returned from queries because they are currently being processed
-		private String getFileIdsWhereString() {
+		private String getFileIdsWhereString(String col) {
 			String fileIdsWhere = "";
 			if (queue.size() > 0) {
-				fileIdsWhere = " AND id NOT IN (";
+				fileIdsWhere = " AND "+col+" NOT IN (";
 				for (int i=0; i<queue.size(); i++) {
 					if (i > 0) {
 						fileIdsWhere += ",";
@@ -168,13 +193,13 @@ public class JobPoller {
 			return fileIdsWhere;
 		}
 		
-		private String getFileTypeIdsWhereString() {
+		private String getFileTypeIdsWhereString(String col) {
 			// the ids of the file types that we know about.
 			// we are not interested in any other file type ids that aren't listed
 			// all file types in laravel should be duplicated here
 			String fileTypeIdsWhere = "";
 			if (FileType.values().length > 0) {
-				fileTypeIdsWhere = " AND file_type_id IN (";
+				fileTypeIdsWhere = " AND "+col+" IN (";
 				for (int i=0; i<FileType.values().length; i++) {
 					if (i > 0) {
 						fileTypeIdsWhere += ",";

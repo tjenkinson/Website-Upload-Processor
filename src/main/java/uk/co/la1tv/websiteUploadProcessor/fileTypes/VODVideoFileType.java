@@ -125,7 +125,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 		// this order is important to make sure if anything goes wrong there aren't any files left in the webapp files folder without a corresponding entry in the db
 		
 		// create entries in Files with in_use set to 0
-		// and copy files accross to web app
+		// and copy files across to web app
 		try {
 			for (Format f : formats) {
 				
@@ -139,7 +139,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 				s.setTimestamp(1, currentTimestamp);
 				s.setTimestamp(2, currentTimestamp);
 				s.setLong(3, size);
-				s.setInt(4, f.fileTypeId);
+				s.setInt(4, FileType.VOD_VIDEO_RENDER.getObj().getId());
 				s.setInt(5, file.getId());
 				if (s.executeUpdate() != 1) {
 					logger.warn("Error occurred when creating database entry for a file.");

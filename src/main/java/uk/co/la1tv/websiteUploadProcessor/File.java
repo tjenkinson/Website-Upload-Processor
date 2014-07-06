@@ -32,6 +32,12 @@ public class File {
 		logger.info("Created File object for file of type '"+type.getClass().getSimpleName()+"' with id "+id+" and name '"+name+"'.");
 	}
 	
+	// TODO: check if there'a another method that needs overriding as well
+	@Override
+	public boolean equals(Object a) {
+		return a instanceof File && ((File) a).getId() == getId();
+	}
+	
 	public int getId() {
 		return id;
 	}
