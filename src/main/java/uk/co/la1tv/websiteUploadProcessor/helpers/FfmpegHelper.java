@@ -20,7 +20,7 @@ public class FfmpegHelper {
 		// get source file information.
 		GenericStreamMonitor streamMonitor = new GenericStreamMonitor();
 		
-		exitVal = RuntimeHelper.executeProgram("\""+config.getString("ffmpeg.probeLocation")+"\" -v quiet -print_format json -show_format -show_streams \""+file.getAbsolutePath()+"\"", workingDir, streamMonitor, null);
+		exitVal = RuntimeHelper.executeProgram(""+config.getString("ffmpeg.probeLocation")+" -v quiet -print_format json -show_format -show_streams \""+file.getAbsolutePath()+"\"", workingDir, streamMonitor, null);
 		if (exitVal != 0) {
 			logger.warn("Error retrieving metadata for file '"+file.getAbsolutePath()+"' with ffprobe.");
 			return null;
