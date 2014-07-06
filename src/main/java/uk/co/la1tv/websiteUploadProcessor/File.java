@@ -9,7 +9,6 @@ import java.sql.SQLException;
 import org.apache.commons.io.FileUtils;
 import org.apache.log4j.Logger;
 
-import uk.co.la1tv.websiteUploadProcessor.fileTypes.FileType;
 import uk.co.la1tv.websiteUploadProcessor.fileTypes.FileTypeAbstract;
 import uk.co.la1tv.websiteUploadProcessor.helpers.DbHelper;
 import uk.co.la1tv.websiteUploadProcessor.helpers.FileHelper;
@@ -32,10 +31,14 @@ public class File {
 		logger.info("Created File object for file of type '"+type.getClass().getSimpleName()+"' with id "+id+" and name '"+name+"'.");
 	}
 	
-	// TODO: check if there'a another method that needs overriding as well
 	@Override
 	public boolean equals(Object a) {
 		return a instanceof File && ((File) a).getId() == getId();
+	}
+	
+	@Override
+	public int hashCode() {
+		return getId();
 	}
 	
 	public int getId() {
