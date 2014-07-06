@@ -18,8 +18,7 @@ public class RuntimeHelper {
 	 * @return The exit code from the program being run.
 	 */
 	public static int executeProgram(String[] cmd, File workingDir, StreamMonitor inputStream, StreamMonitor errStream) {
-		// TODO: expand cmd
-		logger.trace("Executing '"+cmd+"' with working dir '"+workingDir.getAbsolutePath()+"'.");
+		logger.trace("Executing '"+explode(cmd)+"' with working dir '"+workingDir.getAbsolutePath()+"'.");
 		
 		int exitVal;
 		try {
@@ -57,5 +56,21 @@ public class RuntimeHelper {
 			throw(new RuntimeException("InterruptException occured. This shouldn't happen."));
 		}
 		return exitVal;
+	}
+	
+	private static String explode(String[] a) {
+		String b = "";
+		boolean first = true;
+		for (String c : a) {
+			if (!first) {
+				b += " ";
+			}
+			else {
+				first = false;
+			}
+			b += c;
+		}
+		
+		return b;
 	}
 }
