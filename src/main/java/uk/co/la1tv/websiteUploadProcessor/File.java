@@ -28,7 +28,7 @@ public class File {
 		this.name = name;
 		this.size = size;
 		this.type = type;
-		logger.info("Created File object for file of type '"+type.getClass().getSimpleName()+"' with id "+id+" and name '"+name+"'.");
+		logger.debug("Created File object for file of type '"+type.getClass().getSimpleName()+"' with id "+id+" and name '"+name+"'.");
 	}
 	
 	@Override
@@ -73,17 +73,19 @@ public class File {
 		} catch (IOException e) {
 			throw(new RuntimeException("Error creating folder for file to process."));
 		}
+		logger.debug("Created folder for file in working directory.");
 		
 		if (config.getBoolean("general.workWithCopy")) {
 			try {
 				destinationSourceFilePath = FileHelper.format(fileWorkingDir+"/source");
+				logger.debug("Copying file with id "+getId()+" to working directory...");
 				FileUtils.copyFile(new java.io.File(sourceFilePath), new java.io.File(destinationSourceFilePath));
+				logger.debug("Copied file with id "+getId()+" to working directory.");
 			} catch (IOException e) {
 				logger.error("Error copying file with id "+getId()+" from web app files location to working directory.");
 				return;
 			}
 		}
-		logger.debug("Created folder for file in working directory.");
 		
 		boolean success = type.process(new java.io.File(destinationSourceFilePath), new java.io.File(fileWorkingDir), this);
 		if (!success) {

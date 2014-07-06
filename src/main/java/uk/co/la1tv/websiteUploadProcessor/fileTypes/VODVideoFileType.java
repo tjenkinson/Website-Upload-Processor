@@ -12,14 +12,13 @@ import java.util.List;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.log4j.Logger;
-import org.json.JSONException;
-import org.json.JSONObject;
 
 import uk.co.la1tv.websiteUploadProcessor.Config;
 import uk.co.la1tv.websiteUploadProcessor.File;
 import uk.co.la1tv.websiteUploadProcessor.helpers.DbHelper;
+import uk.co.la1tv.websiteUploadProcessor.helpers.FfmpegFileInfo;
+import uk.co.la1tv.websiteUploadProcessor.helpers.FfmpegHelper;
 import uk.co.la1tv.websiteUploadProcessor.helpers.FileHelper;
-import uk.co.la1tv.websiteUploadProcessor.helpers.GenericStreamMonitor;
 import uk.co.la1tv.websiteUploadProcessor.helpers.RuntimeHelper;
 
 public class VODVideoFileType extends FileTypeAbstract {
@@ -34,42 +33,29 @@ public class VODVideoFileType extends FileTypeAbstract {
 	public boolean process(java.io.File source, java.io.File workingDir, File file) {
 		Config config = Config.getInstance();
 		int exitVal;
+		FfmpegFileInfo info;
 		
 		// get source file information.
-		GenericStreamMonitor streamMonitor = new GenericStreamMonitor();
-		
-		exitVal = RuntimeHelper.executeProgram("\""+config.getString("ffmpeg.probeLocation")+"\" -v quiet -print_format json -show_format -show_streams \""+source.getAbsolutePath()+"\"", workingDir, streamMonitor, null);
-		if (exitVal != 0) {
-			logger.warn("Cannot process VOD file with id "+file.getId()+" because there is an error in the metadata.");
-			return false;
-		}
-		
-		// the output from ffmpegprobe should be pure json
-		JSONObject metadata;
-		
-		try {
-			metadata = new JSONObject(streamMonitor.getOutput());
-		}
-		catch(JSONException e) {
-			logger.warn("Error parsing JSON from ffmpegprobe.");
+		info = FfmpegHelper.getFileInfo(source, workingDir);
+		if (info == null) {
+			logger.warn("Error retrieving info for file with id "+file.getId()+".");
 			return false;
 		}
 		
 		// check the duration is more than 0
-		if (Double.parseDouble(metadata.getJSONObject("format").getString("duration")) == 0) {
+		if (info.getDuration() == 0) {
 			logger.warn("Cannot process VOD file with id "+file.getId()+" because it's duration is 0.");
 			return false;
 		}
 		
 		// get video height
-		int sourceFileH = metadata.getJSONArray("streams").getJSONObject(0).getInt("height");
+		int sourceFileH = info.getH();
 		List<Object> allFormats = config.getList("encoding.formats");
 		
 		ArrayList<Format> formats = new ArrayList<Format>();
-		
 		for (Object f : allFormats) {
 			String[] a = ((String) f).split("-");
-			int fileTypeId = Integer.parseInt(a[0]);
+			int qualityDefinitionId = Integer.parseInt(a[0]);
 			int h = Integer.parseInt(a[1]);
 			h += h%2; // height (and width) must be multiple of 2 for libx codec
 			int aBitrate = Integer.parseInt(a[2]);
@@ -79,8 +65,10 @@ public class VODVideoFileType extends FileTypeAbstract {
 				logger.debug("Not rendering height "+h+" because it is more than the source file's height.");
 				continue;
 			}
-			formats.add(new Format(fileTypeId, h, aBitrate, vBitrate));
+			formats.add(new Format(qualityDefinitionId, h, aBitrate, vBitrate));
 		}
+		
+		ArrayList<OutputFile> outputFiles = new ArrayList<OutputFile>();
 		
 		Connection dbConnection = DbHelper.getMainDb().getConnection();
 		boolean success = true;
@@ -118,7 +106,6 @@ public class VODVideoFileType extends FileTypeAbstract {
 				success = false;
 				break;
 			}
-			
 		}
 		
 		
@@ -132,7 +119,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 				java.io.File outputFile = new java.io.File(FileHelper.format(workingDir.getAbsolutePath()+"/")+"output_"+f.h);
 				long size = outputFile.length(); // size of file in bytes
 				
-				logger.debug("Creating file record for render with height "+f.h+" belonging to source file with id "+file.getId());
+				logger.debug("Creating file record for render with height "+f.h+" belonging to source file with id "+file.getId()+".");
 
 				Timestamp currentTimestamp = new Timestamp(System.currentTimeMillis());
 				PreparedStatement s = dbConnection.prepareStatement("INSERT INTO files (in_use,created_at,updated_at,size,file_type_id,source_file_id,process_state) VALUES(0,?,?,?,?,?,1)", Statement.RETURN_GENERATED_KEYS);
@@ -148,7 +135,16 @@ public class VODVideoFileType extends FileTypeAbstract {
 				ResultSet generatedKeys = s.getGeneratedKeys();
 				generatedKeys.next();
 				f.id = generatedKeys.getInt(1);
-				logger.info("File record created with id "+f.id+" for render with height "+f.h+" belonging to source file with id "+file.getId());
+				logger.debug("File record created with id "+f.id+" for render with height "+f.h+" belonging to source file with id "+file.getId()+".");
+				
+				// add entry to OutputFiles array which will be used to populate VideoFiles table later
+				// get width and height of output
+				info = FfmpegHelper.getFileInfo(outputFile, workingDir);
+				if (info == null) {
+					logger.warn("Error retrieving info for file rendered from source file with id "+file.getId()+".");
+					return false;
+				}
+				outputFiles.add(new OutputFile(f.id, info.getW(), info.getH(), f.qualityDefinitionId));
 				
 				// copy file to server
 				logger.info("Moving output file with id "+f.id+" to web app...");
@@ -178,7 +174,27 @@ public class VODVideoFileType extends FileTypeAbstract {
 					return false;
 				}
 			}
-			//TODO: still need to create entry in video_files here
+			
+			// create entries in video_files
+			logger.debug("Creating entries in video_files table...");
+			for (OutputFile o : outputFiles) {
+				Timestamp currentTimestamp = new Timestamp(System.currentTimeMillis());
+				PreparedStatement s = dbConnection.prepareStatement("INSERT INTO video_files (width,height,created_at,updated_at,quality_definition_id,file_id) VALUES (?,?,?,?,?,?)");
+				s.setInt(1, o.w);
+				s.setInt(2, o.h);
+				s.setTimestamp(3, currentTimestamp);
+				s.setTimestamp(4, currentTimestamp);
+				s.setInt(5, o.qualityDefinitionId);
+				s.setInt(6, o.id);
+				if (s.executeUpdate() != 1) {
+					dbConnection.prepareStatement("ROLLBACK").executeUpdate();
+					logger.debug("Error registering file with id "+o.id+" in video_files table. Rolled back transaction.");
+					return false;
+				}
+				logger.debug("Created entry in video_files table for file with id "+o.id+".");
+			}
+			logger.debug("Created entries in video_files table.");
+			
 			dbConnection.prepareStatement("COMMIT").executeUpdate();
 		} catch (SQLException e) {
 			// rollback transaction
@@ -192,14 +208,13 @@ public class VODVideoFileType extends FileTypeAbstract {
 		}
 		
 		logger.debug("Marked all files as in_use and created entry in video_files table.");
-		
 		return success;
 	}
 		
 	private class Format {
 		
-		public Format(int fileTypeId, int h, int aBitrate, int vBitrate) {
-			this.fileTypeId = fileTypeId;
+		public Format(int qualityDefinitionId, int h, int aBitrate, int vBitrate) {
+			this.qualityDefinitionId = qualityDefinitionId;
 			this.h = h;
 			this.aBitrate = aBitrate;
 			this.vBitrate = vBitrate;
@@ -208,7 +223,22 @@ public class VODVideoFileType extends FileTypeAbstract {
 		public int h;
 		public int aBitrate;
 		public int vBitrate;
-		public int fileTypeId;
+		public int qualityDefinitionId;
 		public int id;
+	}
+	
+	private class OutputFile {
+		
+		public int id;
+		public int w;
+		public int h;
+		public int qualityDefinitionId;
+		
+		public OutputFile(int id, int w, int h, int qualityDefinitionId) {
+			this.id = id;
+			this.w = w;
+			this.h = h;
+			this.qualityDefinitionId = qualityDefinitionId;
+		}
 	}
 }
