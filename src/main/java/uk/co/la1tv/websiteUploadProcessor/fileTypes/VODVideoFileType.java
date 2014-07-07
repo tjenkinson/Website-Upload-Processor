@@ -101,7 +101,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 
 			DbHelper.updateStatus(file.getId(), "Rendering video into required formats.", null);
 			String outputFileLocation = FileHelper.format(workingDir.getAbsolutePath()+"/")+"output_"+f.h;
-			exitVal = RuntimeHelper.executeProgram(new String[] {config.getString("ffmpeg.location"), "-y", "-nostdin", "-i", source.getAbsolutePath(), "-vf", "scale=trunc(oh/a/2)*2:"+f.h, "-strict", "experimental", "-acodec", "aac", "-ab", f.aBitrate+"k", "-ac", "2", "-ar", "48000", "-vcodec", "libx264", "-vprofile", "main", "-g", "48", "-b:v", f.vBitrate+"k", "-f", "mp4", outputFileLocation}, workingDir, null, null);
+			exitVal = RuntimeHelper.executeProgram(new String[] {config.getString("ffmpeg.location"), "-y", "-nostdin", "-timelimit", ""+config.getInt("ffmpeg.videoEncodeTimeLimit"), "-i", source.getAbsolutePath(), "-vf", "scale=trunc(oh/a/2)*2:"+f.h, "-strict", "experimental", "-acodec", "aac", "-ab", f.aBitrate+"k", "-ac", "2", "-ar", "48000", "-vcodec", "libx264", "-vprofile", "main", "-g", "48", "-b:v", f.vBitrate+"k", "-f", "mp4", outputFileLocation}, workingDir, null, null);
 			if (exitVal == 0) {
 				logger.debug("ffmpeg finished successfully with error code "+exitVal+".");
 			}
