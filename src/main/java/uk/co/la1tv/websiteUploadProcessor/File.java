@@ -60,7 +60,7 @@ public class File {
 	public void process() {
 		
 		Config config = Config.getInstance();
-		boolean errorOccurred = false;
+		boolean errorMovingSourceFile = false;
 		
 		logger.info("Started processing file with id "+getId()+" and name '"+getName()+"'.");
 		DbHelper.updateStatus(getId(), "Started processing.", null);
@@ -84,25 +84,24 @@ public class File {
 				FileUtils.copyFile(new java.io.File(sourceFilePath), new java.io.File(destinationSourceFilePath));
 				logger.debug("Copied file with id "+getId()+" to working directory.");
 			} catch (IOException e) {
-				errorOccurred = true;
+				errorMovingSourceFile = true;
 				logger.error("Error copying file with id "+getId()+" from web app files location to working directory.");
 			}
 		}
 		
 		FileTypeProcessReturnInfo info = null;
-		if (!errorOccurred) {
+		if (!errorMovingSourceFile) {
 			info = type.process(new java.io.File(destinationSourceFilePath), new java.io.File(fileWorkingDir), this);
 			if (info == null) {
 				// this has success set to false
 				info = new FileTypeProcessReturnInfo();
 			}
 			if (!info.success) {
-				errorOccurred = true;
 				logger.warn("An error occurred when trying to process file with id "+getId()+".");
 			}
 		}
 		
-		if (!errorOccurred) {
+		if (!errorMovingSourceFile) {
 			// update process_state in db and mark files as in_use
 			Connection dbConnection = DbHelper.getMainDb().getConnection();
 			logger.debug("Updating process_state in database...");
@@ -184,7 +183,6 @@ public class File {
 			FileUtils.forceDelete(new java.io.File(fileWorkingDir));
 			logger.debug("Removed files working directory.");
 		} catch (IOException e) {
-			errorOccurred = true;
 			logger.error("Error removing files working directory.");
 		}
 		
