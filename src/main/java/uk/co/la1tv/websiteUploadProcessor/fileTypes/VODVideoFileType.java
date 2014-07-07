@@ -1,6 +1,5 @@
 package uk.co.la1tv.websiteUploadProcessor.fileTypes;
 
-import java.io.IOException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -11,7 +10,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 
-import org.apache.commons.io.FileUtils;
 import org.apache.log4j.Logger;
 
 import uk.co.la1tv.websiteUploadProcessor.Config;
@@ -176,10 +174,9 @@ public class VODVideoFileType extends FileTypeAbstract {
 				
 				// copy file to server
 				logger.info("Moving output file with id "+f.id+" to web app...");
-				try {
-					FileUtils.copyFile(outputFile, new java.io.File(FileHelper.format(config.getString("files.webappFilesLocation")+"/"+f.id)));
-				} catch (IOException e) {
-					throw(new RuntimeException("Error moving output file to webapp."));
+				if (!outputFile.renameTo(new java.io.File(FileHelper.format(config.getString("files.webappFilesLocation")+"/"+f.id)))) {
+					logger.error("Error trying to move output file with id "+f.id+" back to web app.");
+					return returnVal;
 				}
 				logger.info("Output file with id "+f.id+" moved to web app.");
 			}
