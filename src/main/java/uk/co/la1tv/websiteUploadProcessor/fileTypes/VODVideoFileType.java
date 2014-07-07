@@ -31,24 +31,28 @@ public class VODVideoFileType extends FileTypeAbstract {
 	private static Logger logger = Logger.getLogger(VODVideoFileType.class);
 
 	@Override
-	public HashSet<Integer> process(java.io.File source, java.io.File workingDir, File file) {
+	public FileTypeProcessReturnInfo process(java.io.File source, java.io.File workingDir, File file) {
 		Config config = Config.getInstance();
 		int exitVal;
+		FileTypeProcessReturnInfo returnVal = new FileTypeProcessReturnInfo();
 		// ids of files that should be marked in_use when the process_state is updated at the end of processing
-		HashSet<Integer> fileIdsToMarkInUse = new HashSet<Integer>();
+		returnVal.fileIdsToMarkInUse = new HashSet<Integer>();
 		FfmpegFileInfo info;
 		
+		DbHelper.updateStatus(file.getId(), "Checking video format.", null);
 		// get source file information.
 		info = FfmpegHelper.getFileInfo(source, workingDir);
 		if (info == null) {
 			logger.warn("Error retrieving info for file with id "+file.getId()+".");
-			return null;
+			returnVal.msg = "Invalid video format.";
+			return returnVal;
 		}
 		
 		// check the duration is more than 0
 		if (info.getDuration() == 0) {
 			logger.warn("Cannot process VOD file with id "+file.getId()+" because it's duration is 0.");
-			return null;
+			returnVal.msg = "Video duration must be more than 0.";
+			return returnVal;
 		}
 		
 		// get video height
@@ -87,14 +91,15 @@ public class VODVideoFileType extends FileTypeAbstract {
 				}
 				if (r.getBoolean("ready_for_delete")) {
 					logger.debug("VOD with id "+file.getId()+" has been marked for deletion so not processing any more.");
-					return null;
+					return returnVal;
 				}
 			} catch (SQLException e) {
 				throw(new RuntimeException("SQL error when trying to check if file still hasn't been deleted."));
 			}
 			
 			logger.debug("Executing ffmpeg for height "+f.h+" and audio bitrate "+f.aBitrate+"kbps, video bitrate "+f.vBitrate+"kbps.");
-			
+
+			DbHelper.updateStatus(file.getId(), "Rendering video into required formats.", null);
 			String outputFileLocation = FileHelper.format(workingDir.getAbsolutePath()+"/")+"output_"+f.h;
 			exitVal = RuntimeHelper.executeProgram(new String[] {config.getString("ffmpeg.location"), "-y", "-nostdin", "-i", source.getAbsolutePath(), "-vf", "scale=trunc(oh/a/2)*2:"+f.h, "-strict", "experimental", "-acodec", "aac", "-ab", f.aBitrate+"k", "-ac", "2", "-ar", "48000", "-vcodec", "libx264", "-vprofile", "main", "-g", "48", "-b:v", f.vBitrate+"k", "-f", "mp4", outputFileLocation}, workingDir, null, null);
 			if (exitVal == 0) {
@@ -104,7 +109,8 @@ public class VODVideoFileType extends FileTypeAbstract {
 				logger.warn("ffmpeg finished but returned error code "+exitVal+".");
 				// if any renders fail fail the whole thing.
 				// already rendered files will be cleaned up later because the working directory is cleared
-				return null;
+				returnVal.msg = "Error rendering video.";
+				return returnVal;
 			}
 		}
 		
@@ -113,6 +119,8 @@ public class VODVideoFileType extends FileTypeAbstract {
 		
 		// create entries in Files with in_use set to 0
 		// and copy files across to web app
+
+		DbHelper.updateStatus(file.getId(), "Finalizing renders.", null);
 		try {
 			for (Format f : formats) {
 				
@@ -130,7 +138,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 				s.setInt(5, file.getId());
 				if (s.executeUpdate() != 1) {
 					logger.warn("Error occurred when creating database entry for a file.");
-					return null;
+					return returnVal;
 				}
 				ResultSet generatedKeys = s.getGeneratedKeys();
 				generatedKeys.next();
@@ -138,14 +146,14 @@ public class VODVideoFileType extends FileTypeAbstract {
 				logger.debug("File record created with id "+f.id+" for render with height "+f.h+" belonging to source file with id "+file.getId()+".");
 				
 				// add to set of files to mark in_use when processing completed
-				fileIdsToMarkInUse.add(f.id);
+				returnVal.fileIdsToMarkInUse.add(f.id);
 				
 				// add entry to OutputFiles array which will be used to populate VideoFiles table later
 				// get width and height of output
 				info = FfmpegHelper.getFileInfo(outputFile, workingDir);
 				if (info == null) {
 					logger.warn("Error retrieving info for file rendered from source file with id "+file.getId()+".");
-					return null;
+					return returnVal;
 				}
 				outputFiles.add(new OutputFile(f.id, info.getW(), info.getH(), f.qualityDefinitionId));
 				
@@ -177,7 +185,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 				if (s.executeUpdate() != 1) {
 					dbConnection.prepareStatement("ROLLBACK").executeUpdate();
 					logger.debug("Error registering file with id "+o.id+" in video_files table. Rolled back transaction.");
-					return null;
+					return returnVal;
 				}
 				logger.debug("Created entry in video_files table for file with id "+o.id+".");
 			}
@@ -185,8 +193,8 @@ public class VODVideoFileType extends FileTypeAbstract {
 		} catch (SQLException e) {
 			throw(new RuntimeException("Error trying to create entries in video_files."));
 		}
-		
-		return fileIdsToMarkInUse;
+		returnVal.success = true;
+		return returnVal;
 	}
 		
 	private class Format {

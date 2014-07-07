@@ -90,6 +90,7 @@ public class JobPoller {
 					
 					// create File obj
 					File file = DbHelper.buildFileFromResult(r);
+					DbHelper.updateStatus(file.getId(), "Added to process queue.", null);
 					queue.add(r.getInt("id"));
 					threadPool.execute(new Job(taskCompletionHandler, file));
 					logger.info("Created and scheduled process job for file with id "+r.getInt("id")+".");

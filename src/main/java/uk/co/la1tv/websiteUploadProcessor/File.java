@@ -5,12 +5,11 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.Set;
-
 import org.apache.commons.io.FileUtils;
 import org.apache.log4j.Logger;
 
 import uk.co.la1tv.websiteUploadProcessor.fileTypes.FileTypeAbstract;
+import uk.co.la1tv.websiteUploadProcessor.fileTypes.FileTypeProcessReturnInfo;
 import uk.co.la1tv.websiteUploadProcessor.helpers.DbHelper;
 import uk.co.la1tv.websiteUploadProcessor.helpers.FileHelper;
 
@@ -63,6 +62,7 @@ public class File {
 		Config config = Config.getInstance();
 		
 		logger.info("Started processing file with id "+getId()+" and name '"+getName()+"'.");
+		DbHelper.updateStatus(getId(), "Started processing.", null);
 		logger.debug("Creating folder for file in working directory...");
 		String fileWorkingDir = FileHelper.getFileWorkingDir(getId());
 		String sourceFilePath = FileHelper.getSourceFilePath(getId());
@@ -88,8 +88,12 @@ public class File {
 			}
 		}
 		
-		Set<Integer> fileIdsToMarkInUse = type.process(new java.io.File(destinationSourceFilePath), new java.io.File(fileWorkingDir), this);
-		if (fileIdsToMarkInUse == null) {
+		FileTypeProcessReturnInfo info = type.process(new java.io.File(destinationSourceFilePath), new java.io.File(fileWorkingDir), this);
+		if (info == null) {
+			// this has success set to false
+			info = new FileTypeProcessReturnInfo();
+		}
+		if (!info.success) {
 			logger.warn("An error occurred when trying to process file with id "+getId()+".");
 		}
 		
@@ -113,11 +117,11 @@ public class File {
 				}
 				
 				
-				if (fileIdsToMarkInUse != null && fileIdsToMarkInUse.size() > 0) {
+				if (info.success && info.fileIdsToMarkInUse.size() > 0) {
 					
 					String query = "UPDATE files SET in_use=1 WHERE id IN (";
 					
-					for (int i=0; i<fileIdsToMarkInUse.size(); i++) {
+					for (int i=0; i<info.fileIdsToMarkInUse.size(); i++) {
 						if (i > 0) {
 							query += ",";
 						}
@@ -127,25 +131,26 @@ public class File {
 					s = dbConnection.prepareStatement(query);
 					{
 						int i=1;
-						for(Integer id : fileIdsToMarkInUse) {
+						for(Integer id : info.fileIdsToMarkInUse) {
 							s.setInt(i++, id);
 						}
 					}
-					if (s.executeUpdate() != fileIdsToMarkInUse.size()) {
+					if (s.executeUpdate() != info.fileIdsToMarkInUse.size()) {
 						logger.error("Error occurred setting in_use to 1. Processing will be marked as failing.");
 						// rollback to make sure if some were marked as in_use they all get reverted back
 						dbConnection.prepareStatement("ROLLBACK").executeUpdate();
 						// start another transaction because rest of code in this try catch block is expecting transaction
 						dbConnection.prepareStatement("START TRANSACTION").executeUpdate();
 						// causes processing to be marked as failure
-						fileIdsToMarkInUse = null;
+						info.success = false;
 					}
 				}
 				
 				
-				// update process_state
+				// update process_state and set error message
+				DbHelper.updateStatus(getId(), !info.success ? info.msg : "", null);
 				s = dbConnection.prepareStatement("UPDATE files SET process_state=? WHERE id=?");
-				s.setInt(1, fileIdsToMarkInUse != null ? 1 : 2); // a value of 1 represents success, 2 represents failure
+				s.setInt(1, info.success ? 1 : 2); // a value of 1 represents success, 2 represents failure
 				s.setInt(2, getId());
 				if (s.executeUpdate() != 1) {
 					logger.trace("Rolling back database transaction.");
