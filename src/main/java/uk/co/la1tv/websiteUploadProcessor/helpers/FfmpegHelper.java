@@ -40,8 +40,9 @@ public class FfmpegHelper {
 		int w = metadata.getJSONArray("streams").getJSONObject(0).getInt("width");
 		int h = metadata.getJSONArray("streams").getJSONObject(0).getInt("height");
 		double duration = Double.parseDouble(metadata.getJSONObject("format").getString("duration"));
+		double noFrames = Double.parseDouble(metadata.getJSONArray("streams").getJSONObject(0).getString("nb_frames"));
 		
-		return new FfmpegFileInfo(w, h, duration);
+		return new FfmpegFileInfo(w, h, duration, noFrames);
 	}
 	
 }

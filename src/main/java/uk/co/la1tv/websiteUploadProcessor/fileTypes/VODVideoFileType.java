@@ -19,6 +19,7 @@ import uk.co.la1tv.websiteUploadProcessor.File;
 import uk.co.la1tv.websiteUploadProcessor.helpers.DbHelper;
 import uk.co.la1tv.websiteUploadProcessor.helpers.FfmpegFileInfo;
 import uk.co.la1tv.websiteUploadProcessor.helpers.FfmpegHelper;
+import uk.co.la1tv.websiteUploadProcessor.helpers.FfmpegProgressMonitor;
 import uk.co.la1tv.websiteUploadProcessor.helpers.FileHelper;
 import uk.co.la1tv.websiteUploadProcessor.helpers.RuntimeHelper;
 
@@ -31,7 +32,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 	private static Logger logger = Logger.getLogger(VODVideoFileType.class);
 
 	@Override
-	public FileTypeProcessReturnInfo process(java.io.File source, java.io.File workingDir, File file) {
+	public FileTypeProcessReturnInfo process(java.io.File source, java.io.File workingDir, final File file) {
 		Config config = Config.getInstance();
 		int exitVal;
 		FileTypeProcessReturnInfo returnVal = new FileTypeProcessReturnInfo();
@@ -59,7 +60,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 		int sourceFileH = info.getH();
 		List<Object> allFormats = config.getList("encoding.formats");
 		
-		ArrayList<Format> formats = new ArrayList<Format>();
+		final ArrayList<Format> formats = new ArrayList<Format>();
 		for (Object f : allFormats) {
 			String[] a = ((String) f).split("-");
 			int qualityDefinitionId = Integer.parseInt(a[0]);
@@ -78,8 +79,12 @@ public class VODVideoFileType extends FileTypeAbstract {
 		ArrayList<OutputFile> outputFiles = new ArrayList<OutputFile>();
 		
 		Connection dbConnection = DbHelper.getMainDb().getConnection();
+		
+		final String renderRequiredFormatsMsg = "Rendering video into required formats.";
+		DbHelper.updateStatus(file.getId(), renderRequiredFormatsMsg, 0);
+		
 		// loop through different formats and render videos for ones that are applicable
-		for (Format f : formats) {
+		for (final Format f : formats) {
 			
 			// check if file is now marked for deletion
 			try {
@@ -99,9 +104,21 @@ public class VODVideoFileType extends FileTypeAbstract {
 			
 			logger.debug("Executing ffmpeg for height "+f.h+" and audio bitrate "+f.aBitrate+"kbps, video bitrate "+f.vBitrate+"kbps.");
 
-			DbHelper.updateStatus(file.getId(), "Rendering video into required formats.", null);
 			String outputFileLocation = FileHelper.format(workingDir.getAbsolutePath()+"/")+"output_"+f.h;
-			exitVal = RuntimeHelper.executeProgram(new String[] {config.getString("ffmpeg.location"), "-y", "-nostdin", "-timelimit", ""+config.getInt("ffmpeg.videoEncodeTimeLimit"), "-i", source.getAbsolutePath(), "-vf", "scale=trunc(oh/a/2)*2:"+f.h, "-strict", "experimental", "-acodec", "aac", "-ab", f.aBitrate+"k", "-ac", "2", "-ar", "48000", "-vcodec", "libx264", "-vprofile", "main", "-g", "48", "-b:v", f.vBitrate+"k", "-f", "mp4", outputFileLocation}, workingDir, null, null);
+			String progressFileLocation = FileHelper.format(workingDir.getAbsolutePath()+"/")+"progress_"+f.h;
+			
+			final FfmpegProgressMonitor monitor = new FfmpegProgressMonitor(new java.io.File(progressFileLocation), info.getNoFrames());
+			monitor.setCallback(new Runnable() {
+				@Override
+				public void run() {
+					// called whenever the process percentage changes
+					// calculate the actual percentage when taking all renders into account
+					int actualPercentage = (int) Math.floor(((float) monitor.getPercentage()/formats.size()) + (formats.indexOf(f)*(100.0/formats.size())));
+					DbHelper.updateStatus(file.getId(), renderRequiredFormatsMsg, actualPercentage);
+				}
+			});
+			exitVal = RuntimeHelper.executeProgram(new String[] {config.getString("ffmpeg.location"), "-y", "-nostdin", "-timelimit", ""+config.getInt("ffmpeg.videoEncodeTimeLimit"), "-progress", ""+progressFileLocation, "-i", source.getAbsolutePath(), "-vf", "scale=trunc(oh/a/2)*2:"+f.h, "-strict", "experimental", "-acodec", "aac", "-ab", f.aBitrate+"k", "-ac", "2", "-ar", "48000", "-vcodec", "libx264", "-vprofile", "main", "-g", "48", "-b:v", f.vBitrate+"k", "-f", "mp4", outputFileLocation}, workingDir, null, null);
+			monitor.destroy();
 			if (exitVal == 0) {
 				logger.debug("ffmpeg finished successfully with error code "+exitVal+".");
 			}
