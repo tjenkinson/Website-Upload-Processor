@@ -14,8 +14,6 @@ public class CoverArtImageRenderFileType extends FileTypeAbstract {
 
 	@Override
 	public FileTypeProcessReturnInfo process(java.io.File source, java.io.File workingDir, File file) {
-		// TODO Auto-generated method stub
 		return null;
 	}
-	
 }

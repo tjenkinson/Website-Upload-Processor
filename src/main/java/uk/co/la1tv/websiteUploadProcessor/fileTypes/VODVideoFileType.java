@@ -56,7 +56,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 		
 		// get video height
 		int sourceFileH = info.getH();
-		List<Object> allFormats = config.getList("encoding.formats");
+		List<Object> allFormats = config.getList("encoding.vodFormats");
 		
 		final ArrayList<Format> formats = new ArrayList<Format>();
 		for (Object f : allFormats) {
