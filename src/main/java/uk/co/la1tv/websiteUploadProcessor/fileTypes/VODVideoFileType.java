@@ -71,7 +71,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 				logger.debug("Not rendering height "+h+" because it is more than the source file's height.");
 				continue;
 			}
-			formats.add(new Format(qualityDefinitionId, h, aBitrate, vBitrate));
+			formats.add(new Format(qualityDefinitionId, h, aBitrate, vBitrate, new java.io.File(FileHelper.format(workingDir.getAbsolutePath()+"/")+"output_"+h), new java.io.File(FileHelper.format(workingDir.getAbsolutePath()+"/")+"progress_"+h)));
 		}
 		
 		ArrayList<OutputFile> outputFiles = new ArrayList<OutputFile>();
@@ -101,11 +101,8 @@ public class VODVideoFileType extends FileTypeAbstract {
 			}
 			
 			logger.debug("Executing ffmpeg for height "+f.h+" and audio bitrate "+f.aBitrate+"kbps, video bitrate "+f.vBitrate+"kbps.");
-
-			String outputFileLocation = FileHelper.format(workingDir.getAbsolutePath()+"/")+"output_"+f.h;
-			String progressFileLocation = FileHelper.format(workingDir.getAbsolutePath()+"/")+"progress_"+f.h;
 			
-			final FfmpegProgressMonitor monitor = new FfmpegProgressMonitor(new java.io.File(progressFileLocation), info.getNoFrames());
+			final FfmpegProgressMonitor monitor = new FfmpegProgressMonitor(f.progressFile, info.getNoFrames());
 			monitor.setCallback(new Runnable() {
 				@Override
 				public void run() {
@@ -115,7 +112,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 					DbHelper.updateStatus(file.getId(), renderRequiredFormatsMsg, actualPercentage);
 				}
 			});
-			exitVal = RuntimeHelper.executeProgram(new String[] {config.getString("ffmpeg.location"), "-y", "-nostdin", "-timelimit", ""+config.getInt("ffmpeg.videoEncodeTimeLimit"), "-progress", ""+progressFileLocation, "-i", source.getAbsolutePath(), "-vf", "scale=trunc(oh/a/2)*2:"+f.h, "-strict", "experimental", "-acodec", "aac", "-ab", f.aBitrate+"k", "-ac", "2", "-ar", "48000", "-vcodec", "libx264", "-vprofile", "main", "-g", "48", "-b:v", f.vBitrate+"k", "-f", "mp4", outputFileLocation}, workingDir, null, null);
+			exitVal = RuntimeHelper.executeProgram(new String[] {config.getString("ffmpeg.location"), "-y", "-nostdin", "-timelimit", ""+config.getInt("ffmpeg.videoEncodeTimeLimit"), "-progress", ""+f.progressFile.getAbsolutePath(), "-i", source.getAbsolutePath(), "-vf", "scale=trunc(oh/a/2)*2:"+f.h, "-strict", "experimental", "-acodec", "aac", "-ab", f.aBitrate+"k", "-ac", "2", "-ar", "48000", "-vcodec", "libx264", "-vprofile", "main", "-g", "48", "-b:v", f.vBitrate+"k", "-f", "mp4", f.outputFile.getAbsolutePath()}, workingDir, null, null);
 			monitor.destroy();
 			if (exitVal == 0) {
 				logger.debug("ffmpeg finished successfully with error code "+exitVal+".");
@@ -175,7 +172,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 				// copy file to server
 				logger.info("Moving output file with id "+f.id+" to web app...");
 				if (!outputFile.renameTo(new java.io.File(FileHelper.format(config.getString("files.webappFilesLocation")+"/"+f.id)))) {
-					logger.error("Error trying to move output file with id "+f.id+" back to web app.");
+					logger.error("Error trying to move output file with id "+f.id+" to web app.");
 					return returnVal;
 				}
 				logger.info("Output file with id "+f.id+" moved to web app.");
@@ -197,8 +194,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 				s.setInt(5, o.qualityDefinitionId);
 				s.setInt(6, o.id);
 				if (s.executeUpdate() != 1) {
-					dbConnection.prepareStatement("ROLLBACK").executeUpdate();
-					logger.debug("Error registering file with id "+o.id+" in video_files table. Rolled back transaction.");
+					logger.debug("Error registering file with id "+o.id+" in video_files table.");
 					return returnVal;
 				}
 				logger.debug("Created entry in video_files table for file with id "+o.id+".");
@@ -213,11 +209,13 @@ public class VODVideoFileType extends FileTypeAbstract {
 		
 	private class Format {
 		
-		public Format(int qualityDefinitionId, int h, int aBitrate, int vBitrate) {
+		public Format(int qualityDefinitionId, int h, int aBitrate, int vBitrate, java.io.File outputFile, java.io.File progressFile) {
 			this.qualityDefinitionId = qualityDefinitionId;
 			this.h = h;
 			this.aBitrate = aBitrate;
 			this.vBitrate = vBitrate;
+			this.outputFile = outputFile;
+			this.progressFile = progressFile;
 		}
 		
 		public int h;
@@ -225,6 +223,8 @@ public class VODVideoFileType extends FileTypeAbstract {
 		public int vBitrate;
 		public int qualityDefinitionId;
 		public int id;
+		public java.io.File outputFile;
+		public java.io.File progressFile;
 	}
 	
 	private class OutputFile {
