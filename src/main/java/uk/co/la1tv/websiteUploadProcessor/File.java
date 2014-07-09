@@ -57,6 +57,12 @@ public class File {
 		return type;
 	}
 	
+	// returns null if the file does not have an extension.
+	public String getExtension() {
+		String[] a = getName().split("\\.");
+		return a.length > 1 ? a[a.length-1] : null;
+	}
+	
 	public void process() {
 		
 		Config config = Config.getInstance();

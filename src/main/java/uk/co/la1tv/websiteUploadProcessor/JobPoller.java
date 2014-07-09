@@ -170,7 +170,6 @@ public class JobPoller {
 				}
 				
 			} catch (SQLException e) {
-				// TODO: this is occurring on server
 				logger.error("SQLException when trying to query databases for files that need deleting.");
 			}
 			logger.info("Finished polling for files pending deletion.");

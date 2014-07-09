@@ -10,14 +10,14 @@ public class ImageMagickHelper {
 
 	private static Logger logger = Logger.getLogger(ImageMagickHelper.class);
 	
-	public static ImageMagickFileInfo getFileInfo(String fileFormat, File file, File workingDir) {
+	public static ImageMagickFileInfo getFileInfo(ImageMagickFormat fileFormat, File file, File workingDir) {
 		Config config = Config.getInstance();
 		int exitVal;
 		
 		// get source file information.
 		GenericStreamMonitor streamMonitor = new GenericStreamMonitor();
 		
-		exitVal = RuntimeHelper.executeProgram(new String[] {config.getString("imagemagick.identifyLocation"), "-format", "%w,%h", fileFormat+":"+file.getAbsolutePath()}, workingDir, streamMonitor, null);
+		exitVal = RuntimeHelper.executeProgram(new String[] {config.getString("imagemagick.identifyLocation"), "-format", "%w,%h", fileFormat.getIMFormat()+":"+file.getAbsolutePath()}, workingDir, streamMonitor, null);
 		if (exitVal != 0) {
 			logger.warn("Error retrieving metadata for file '"+file.getAbsolutePath()+"' with ImageMagick identify.");
 			return null;

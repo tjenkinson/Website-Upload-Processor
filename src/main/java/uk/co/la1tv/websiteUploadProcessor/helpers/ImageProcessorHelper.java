@@ -17,9 +17,9 @@ public class ImageProcessorHelper {
 	 * @param h
 	 * @return exit val from ImageMagick
 	 */
-	public static int process(String inputFormat, String outputFormat, File source, File destination, File workingDir, int w, int h) {
+	public static int process(ImageMagickFormat inputFormat, ImageMagickFormat outputFormat, File source, File destination, File workingDir, int w, int h) {
 		Config config = Config.getInstance();
-		int exitVal = RuntimeHelper.executeProgram(new String[] {config.getString("imagemagick.convertLocation"), inputFormat+":"+source.getAbsolutePath(), "-resize", w+"x"+h+"^", "-gravity", "center", "-crop", w+"x"+h+"+0+0", outputFormat+":"+destination.getAbsolutePath()}, workingDir, null, null);
+		int exitVal = RuntimeHelper.executeProgram(new String[] {config.getString("imagemagick.convertLocation"), inputFormat.getIMFormat()+":"+source.getAbsolutePath(), "-resize", w+"x"+h+"^", "-gravity", "center", "-crop", w+"x"+h+"+0+0", outputFormat.getIMFormat()+":"+destination.getAbsolutePath()}, workingDir, null, null);
 		return exitVal;
 	}
 }

@@ -15,10 +15,9 @@ import org.apache.log4j.Logger;
 import uk.co.la1tv.websiteUploadProcessor.Config;
 import uk.co.la1tv.websiteUploadProcessor.File;
 import uk.co.la1tv.websiteUploadProcessor.helpers.DbHelper;
-import uk.co.la1tv.websiteUploadProcessor.helpers.FfmpegFileInfo;
-import uk.co.la1tv.websiteUploadProcessor.helpers.FfmpegHelper;
 import uk.co.la1tv.websiteUploadProcessor.helpers.FileHelper;
 import uk.co.la1tv.websiteUploadProcessor.helpers.ImageMagickFileInfo;
+import uk.co.la1tv.websiteUploadProcessor.helpers.ImageMagickFormat;
 import uk.co.la1tv.websiteUploadProcessor.helpers.ImageMagickHelper;
 import uk.co.la1tv.websiteUploadProcessor.helpers.ImageProcessorHelper;
 
@@ -41,6 +40,13 @@ public class CoverArtImageFileType extends FileTypeAbstract {
 		
 		DbHelper.updateStatus(file.getId(), "Processing image.", null);
 		
+		ImageMagickFormat iMFormat = ImageMagickFormat.getFormatFromExtension(file.getExtension());
+		if (iMFormat == null) {
+			logger.warn("Error occurred when trying to get image magick formar from image file with id "+file.getId()+".");
+			returnVal.msg = "Error trying to determine image format.";
+			return returnVal;
+		}
+		
 		final ArrayList<Format> formats = new ArrayList<Format>();
 		for (Object f : allFormats) {
 			String[] a = ((String) f).split("-");
@@ -51,7 +57,7 @@ public class CoverArtImageFileType extends FileTypeAbstract {
 		
 		for (Format f : formats) {
 			logger.debug("Executing ImageMagick to process image file for source file with width "+f.w+" and height "+f.h+".");
-			int exitVal = ImageProcessorHelper.process("JPG", "JPG", source, f.outputFile, workingDir, f.w, f.h);
+			int exitVal = ImageProcessorHelper.process(iMFormat, ImageMagickFormat.JPG, source, f.outputFile, workingDir, f.w, f.h);
 			if (exitVal != 0) {
 				logger.warn("ImageMagick finished processing image but returned error code "+exitVal+".");
 				returnVal.msg = "Error processing image.";
@@ -60,7 +66,7 @@ public class CoverArtImageFileType extends FileTypeAbstract {
 		}
 
 		DbHelper.updateStatus(file.getId(), "Finalizing.", null);
-		
+		System.exit(1);
 		Connection dbConnection = DbHelper.getMainDb().getConnection();
 		ArrayList<OutputFile> outputFiles = new ArrayList<OutputFile>();
 		
@@ -92,7 +98,8 @@ public class CoverArtImageFileType extends FileTypeAbstract {
 				
 				// add entry to OutputFiles array which will be used to populate VideoFiles table later
 				// get width and height of output
-				ImageMagickFileInfo info = ImageMagickHelper.getFileInfo("JPEG", f.outputFile, workingDir);
+				
+				ImageMagickFileInfo info = ImageMagickHelper.getFileInfo(iMFormat, f.outputFile, workingDir);
 				if (info == null) {
 					logger.warn("Error retrieving info for file rendered from source file with id "+file.getId()+".");
 					return returnVal;

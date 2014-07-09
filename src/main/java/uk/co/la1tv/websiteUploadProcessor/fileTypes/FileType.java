@@ -10,7 +10,7 @@ public enum FileType {
 	VOD_VIDEO_RENDER(new VODVideoRenderFileType(7)),
 	COVER_ART_IMAGE_RENDER(new CoverArtImageRenderFileType(8));
 	
-	private FileTypeAbstract instance;
+	private final FileTypeAbstract instance;
 	
 	private FileType(FileTypeAbstract a) {
 		instance = a;
