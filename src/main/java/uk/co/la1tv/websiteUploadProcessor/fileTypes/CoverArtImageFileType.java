@@ -18,6 +18,8 @@ import uk.co.la1tv.websiteUploadProcessor.helpers.DbHelper;
 import uk.co.la1tv.websiteUploadProcessor.helpers.FfmpegFileInfo;
 import uk.co.la1tv.websiteUploadProcessor.helpers.FfmpegHelper;
 import uk.co.la1tv.websiteUploadProcessor.helpers.FileHelper;
+import uk.co.la1tv.websiteUploadProcessor.helpers.ImageMagickFileInfo;
+import uk.co.la1tv.websiteUploadProcessor.helpers.ImageMagickHelper;
 import uk.co.la1tv.websiteUploadProcessor.helpers.ImageProcessorHelper;
 
 public class CoverArtImageFileType extends FileTypeAbstract {
@@ -48,15 +50,15 @@ public class CoverArtImageFileType extends FileTypeAbstract {
 		}
 		
 		for (Format f : formats) {
-			logger.debug("Executing ffmpeg to process image file for source file with width "+f.w+" and height "+f.h+".");
-			int exitVal = ImageProcessorHelper.process(source, f.outputFile, workingDir, f.w, f.h);
+			logger.debug("Executing ImageMagick to process image file for source file with width "+f.w+" and height "+f.h+".");
+			int exitVal = ImageProcessorHelper.process("JPG", "JPG", source, f.outputFile, workingDir, f.w, f.h);
 			if (exitVal != 0) {
-				logger.warn("ffmpeg finished processing image but returned error code "+exitVal+".");
+				logger.warn("ImageMagick finished processing image but returned error code "+exitVal+".");
 				returnVal.msg = "Error processing image.";
 				return returnVal;
 			}
 		}
-		
+
 		DbHelper.updateStatus(file.getId(), "Finalizing.", null);
 		
 		Connection dbConnection = DbHelper.getMainDb().getConnection();
@@ -90,7 +92,7 @@ public class CoverArtImageFileType extends FileTypeAbstract {
 				
 				// add entry to OutputFiles array which will be used to populate VideoFiles table later
 				// get width and height of output
-				FfmpegFileInfo info = FfmpegHelper.getFileInfo(f.outputFile, workingDir);
+				ImageMagickFileInfo info = ImageMagickHelper.getFileInfo("JPEG", f.outputFile, workingDir);
 				if (info == null) {
 					logger.warn("Error retrieving info for file rendered from source file with id "+file.getId()+".");
 					return returnVal;
