@@ -50,6 +50,7 @@ public class ImageProcessorHelper {
 	
 	/**
 	 * Processes the source image to all of the formats in the formats array and copies the files across to the web app. Also updates the process status in the database. 
+	 * @param outputFileType 
 	 * @param returnVal: The FileTypeProcessReturnInfo object which will eventually be returned to process() in File.
 	 * @param source: The source file.
 	 * @param workingDir: The working directory.
@@ -59,7 +60,7 @@ public class ImageProcessorHelper {
 	 * @param file: The File object associated with the input file.
 	 * @return True if the processing is successful or false if it failed.
 	 */
-	public static boolean process(FileTypeProcessReturnInfo returnVal, java.io.File source, java.io.File workingDir, List<ImageFormat> formats, ImageMagickFormat inputFormat, ImageMagickFormat outputFormat, File file) {
+	public static boolean process(FileTypeProcessReturnInfo returnVal, java.io.File source, java.io.File workingDir, List<ImageFormat> formats, ImageMagickFormat inputFormat, ImageMagickFormat outputFormat, File file, FileType outputFileType) {
 		
 		for (ImageFormat f : formats) {
 			logger.debug("Executing ImageMagick to process image file for source file with width "+f.w+" and height "+f.h+".");
@@ -87,7 +88,7 @@ public class ImageProcessorHelper {
 				s.setTimestamp(1, currentTimestamp);
 				s.setTimestamp(2, currentTimestamp);
 				s.setLong(3, size);
-				s.setInt(4, FileType.COVER_ART_IMAGE_RENDER.getObj().getId());
+				s.setInt(4, outputFileType.getObj().getId());
 				s.setInt(5, file.getId());
 				if (s.executeUpdate() != 1) {
 					logger.warn("Error occurred when creating database entry for a file.");

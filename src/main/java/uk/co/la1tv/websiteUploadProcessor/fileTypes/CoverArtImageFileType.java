@@ -38,7 +38,7 @@ public class CoverArtImageFileType extends FileTypeAbstract {
 		}
 		
 		final List<ImageFormat> formats = ImageProcessorHelper.getFormats(config.getList("encoding.coverArtImageFormats"), workingDir);
-		returnVal.success = ImageProcessorHelper.process(returnVal, source, workingDir, formats, inputFormat, ImageMagickFormat.JPG, file);
+		returnVal.success = ImageProcessorHelper.process(returnVal, source, workingDir, formats, inputFormat, ImageMagickFormat.JPG, file, FileType.COVER_ART_IMAGE_RENDER);
 		return returnVal;
 	}
 	
