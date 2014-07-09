@@ -136,8 +136,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 		try {
 			for (Format f : formats) {
 				
-				java.io.File outputFile = new java.io.File(FileHelper.format(workingDir.getAbsolutePath()+"/")+"output_"+f.h);
-				long size = outputFile.length(); // size of file in bytes
+				long size = f.outputFile.length(); // size of file in bytes
 				
 				logger.debug("Creating file record for render with height "+f.h+" belonging to source file with id "+file.getId()+".");
 
@@ -162,7 +161,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 				
 				// add entry to OutputFiles array which will be used to populate VideoFiles table later
 				// get width and height of output
-				info = FfmpegHelper.getFileInfo(outputFile, workingDir);
+				info = FfmpegHelper.getFileInfo(f.outputFile, workingDir);
 				if (info == null) {
 					logger.warn("Error retrieving info for file rendered from source file with id "+file.getId()+".");
 					return returnVal;
@@ -171,7 +170,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 				
 				// copy file to server
 				logger.info("Moving output file with id "+f.id+" to web app...");
-				if (!outputFile.renameTo(new java.io.File(FileHelper.format(config.getString("files.webappFilesLocation")+"/"+f.id)))) {
+				if (!FileHelper.moveToWebApp(f.outputFile, f.id)) {
 					logger.error("Error trying to move output file with id "+f.id+" to web app.");
 					return returnVal;
 				}

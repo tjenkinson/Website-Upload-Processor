@@ -63,4 +63,10 @@ public class FileHelper {
 	public static String getSourceFilePath(int fileId) {
 		return FileHelper.format(Config.getInstance().getString("files.webappFilesLocation")+"/"+fileId);
 	}
+	
+	public static boolean moveToWebApp(File source, int id) {
+		File destinationLocation = new File(FileHelper.format(Config.getInstance().getString("files.webappFilesLocation")+"/"+id));
+		destinationLocation.delete(); // delete file at destination (if there is one)
+		return source.renameTo(destinationLocation);
+	}
 }
