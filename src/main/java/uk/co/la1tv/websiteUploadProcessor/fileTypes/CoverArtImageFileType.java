@@ -66,7 +66,6 @@ public class CoverArtImageFileType extends FileTypeAbstract {
 		}
 
 		DbHelper.updateStatus(file.getId(), "Finalizing.", null);
-		System.exit(1);
 		Connection dbConnection = DbHelper.getMainDb().getConnection();
 		ArrayList<OutputFile> outputFiles = new ArrayList<OutputFile>();
 		
