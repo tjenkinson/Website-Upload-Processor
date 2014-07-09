@@ -37,6 +37,17 @@ public class ImageProcessorHelper {
 		return exitVal;
 	}
 	
+	public static List<ImageFormat> getFormats(List<Object> allFormats, java.io.File workingDir) {
+		final ArrayList<ImageFormat> formats = new ArrayList<ImageFormat>();
+		for (Object f : allFormats) {
+			String[] a = ((String) f).split("-");
+			int w = Integer.parseInt(a[0]);
+			int h = Integer.parseInt(a[1]);
+			formats.add(new ImageFormat(w, h, new java.io.File(FileHelper.format(workingDir.getAbsolutePath()+"/output_"+w+"_"+h))));
+		}
+		return formats;
+	}
+	
 	/**
 	 * Processes the source image to all of the formats in the formats array and copies the files across to the web app. Also updates the process status in the database. 
 	 * @param returnVal: The FileTypeProcessReturnInfo object which will eventually be returned to process() in File.

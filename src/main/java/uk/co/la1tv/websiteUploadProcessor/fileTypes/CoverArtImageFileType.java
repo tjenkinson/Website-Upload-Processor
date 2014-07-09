@@ -1,6 +1,5 @@
 package uk.co.la1tv.websiteUploadProcessor.fileTypes;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 
@@ -9,7 +8,6 @@ import org.apache.log4j.Logger;
 import uk.co.la1tv.websiteUploadProcessor.Config;
 import uk.co.la1tv.websiteUploadProcessor.File;
 import uk.co.la1tv.websiteUploadProcessor.helpers.DbHelper;
-import uk.co.la1tv.websiteUploadProcessor.helpers.FileHelper;
 import uk.co.la1tv.websiteUploadProcessor.helpers.ImageFormat;
 import uk.co.la1tv.websiteUploadProcessor.helpers.ImageMagickFormat;
 import uk.co.la1tv.websiteUploadProcessor.helpers.ImageProcessorHelper;
@@ -29,7 +27,6 @@ public class CoverArtImageFileType extends FileTypeAbstract {
 		FileTypeProcessReturnInfo returnVal = new FileTypeProcessReturnInfo();
 		// ids of files that should be marked in_use when the process_state is updated at the end of processing
 		returnVal.fileIdsToMarkInUse = new HashSet<Integer>();
-		List<Object> allFormats = config.getList("encoding.coverArtImageFormats");
 		
 		DbHelper.updateStatus(file.getId(), "Processing image.", null);
 		
@@ -40,14 +37,7 @@ public class CoverArtImageFileType extends FileTypeAbstract {
 			return returnVal;
 		}
 		
-		final ArrayList<ImageFormat> formats = new ArrayList<ImageFormat>();
-		for (Object f : allFormats) {
-			String[] a = ((String) f).split("-");
-			int w = Integer.parseInt(a[0]);
-			int h = Integer.parseInt(a[1]);
-			formats.add(new ImageFormat(w, h, new java.io.File(FileHelper.format(workingDir.getAbsolutePath()+"/output_"+w+"_"+h))));
-		}
-		
+		final List<ImageFormat> formats = ImageProcessorHelper.getFormats(config.getList("encoding.coverArtImageFormats"), workingDir);
 		returnVal.success = ImageProcessorHelper.process(returnVal, source, workingDir, formats, inputFormat, ImageMagickFormat.JPG, file);
 		return returnVal;
 	}
