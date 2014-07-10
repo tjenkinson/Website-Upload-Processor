@@ -32,6 +32,7 @@ public enum ImageMagickFormat {
 	 * @return the format object or null if a format could not be found.
 	 */
 	public static ImageMagickFormat getFormatFromExtension(String extension) {
+		extension = extension.toLowerCase();
 		for (ImageMagickFormat a : ImageMagickFormat.values()) {
 			if (a.getExtension().equals(extension)) {
 				return a;

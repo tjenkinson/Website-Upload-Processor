@@ -66,13 +66,14 @@ public class File {
 	public void process() {
 		
 		Config config = Config.getInstance();
+		// used to signify error if problem copying file from pending files locatioon to server (if working with copy) or if there was a problem moving the source fie from the pending directory to the main files directory.
 		boolean errorMovingSourceFile = false;
 		
 		logger.info("Started processing file with id "+getId()+" and name '"+getName()+"'.");
 		DbHelper.updateStatus(getId(), "Started processing.", null);
 		logger.debug("Creating folder for file in working directory...");
 		String fileWorkingDir = FileHelper.getFileWorkingDir(getId());
-		String sourceFilePath = FileHelper.getSourceFilePath(getId());
+		String sourceFilePath = FileHelper.getSourcePendingFilePath(getId());
 		// the path to file that will be processed. (It might be copied to the working dir so this will be different to sourceFilePath)
 		String destinationSourceFilePath = fileWorkingDir;
 		
@@ -104,6 +105,15 @@ public class File {
 			}
 			if (!info.success) {
 				logger.warn("An error occurred when trying to process file with id "+getId()+".");
+			}
+		}
+		
+		if (!errorMovingSourceFile) {
+			
+			// move source file from pending folder to main files folder
+			if (!FileHelper.moveToWebApp(new java.io.File(sourceFilePath), getId())) {
+				logger.error("An error occurred trying to move the source file with id "+getId()+" from the pending folder to the main folder.");
+				errorMovingSourceFile = true;
 			}
 		}
 		

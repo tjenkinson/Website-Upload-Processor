@@ -141,11 +141,15 @@ public class JobPoller {
 				
 				// delete actual files
 				for(File file : recordsToDelete) {
-					String sourceFilePath = FileHelper.getSourceFilePath(file.getId());	
+					String sourceFilePath = FileHelper.getSourceFilePath(file.getId());
+					String sourcePendingFilePath = FileHelper.getSourcePendingFilePath(file.getId());
+					// presume if the file can't be found in the main folder it's in pending instead.
+					String actualSourceFilePath = Files.exists(Paths.get(sourceFilePath), LinkOption.NOFOLLOW_LINKS) ? sourceFilePath : sourcePendingFilePath;
+					
 					// delete file
 					try {
-						if (Files.exists(Paths.get(sourceFilePath), LinkOption.NOFOLLOW_LINKS)) {
-							FileUtils.forceDelete(new java.io.File(sourceFilePath));
+						if (Files.exists(Paths.get(actualSourceFilePath), LinkOption.NOFOLLOW_LINKS)) {
+							FileUtils.forceDelete(new java.io.File(actualSourceFilePath));
 							logger.debug("Deleted file with id "+file.getId()+".");
 						}
 						else {
