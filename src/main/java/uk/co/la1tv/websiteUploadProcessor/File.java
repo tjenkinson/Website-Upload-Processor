@@ -68,45 +68,55 @@ public class File {
 		Config config = Config.getInstance();
 		// used to signify error if problem copying file from pending files locatioon to server (if working with copy) or if there was a problem moving the source fie from the pending directory to the main files directory.
 		boolean errorMovingSourceFile = false;
+		// true if the webapp folder is over quota meaning the job should be failed.
+		boolean overQuota = FileHelper.isOverQuota();
+		FileTypeProcessReturnInfo info = null;
 		
 		logger.info("Started processing file with id "+getId()+" and name '"+getName()+"'.");
 		DbHelper.updateStatus(getId(), "Started processing.", null);
 		
-		logger.debug("Creating folder for file in working directory...");
 		String fileWorkingDir = FileHelper.getFileWorkingDir(getId());
 		String sourceFilePath = FileHelper.getSourcePendingFilePath(getId());
 		// the path to file that will be processed. (It might be copied to the working dir so this will be different to sourceFilePath)
 		String destinationSourceFilePath = fileWorkingDir;
 		
-		try {
-			FileUtils.forceMkdir(new java.io.File(fileWorkingDir));
-		} catch (IOException e) {
-			throw(new RuntimeException("Error creating folder for file to process."));
-		}
-		logger.debug("Created folder for file in working directory.");
-		
-		if (config.getBoolean("general.workWithCopy")) {
+		if (!overQuota) {
+			logger.debug("Creating folder for file in working directory...");
+			
 			try {
-				destinationSourceFilePath = FileHelper.format(fileWorkingDir+"/source");
-				logger.debug("Copying file with id "+getId()+" to working directory...");
-				FileUtils.copyFile(new java.io.File(sourceFilePath), new java.io.File(destinationSourceFilePath));
-				logger.debug("Copied file with id "+getId()+" to working directory.");
+				FileUtils.forceMkdir(new java.io.File(fileWorkingDir));
 			} catch (IOException e) {
-				errorMovingSourceFile = true;
-				logger.error("Error copying file with id "+getId()+" from web app files location to working directory.");
+				throw(new RuntimeException("Error creating folder for file to process."));
+			}
+			logger.debug("Created folder for file in working directory.");
+			
+			if (config.getBoolean("general.workWithCopy")) {
+				try {
+					destinationSourceFilePath = FileHelper.format(fileWorkingDir+"/source");
+					logger.debug("Copying file with id "+getId()+" to working directory...");
+					FileUtils.copyFile(new java.io.File(sourceFilePath), new java.io.File(destinationSourceFilePath));
+					logger.debug("Copied file with id "+getId()+" to working directory.");
+				} catch (IOException e) {
+					errorMovingSourceFile = true;
+					logger.error("Error copying file with id "+getId()+" from web app files location to working directory.");
+				}
 			}
 		}
 		
-		FileTypeProcessReturnInfo info = null;
-		if (!errorMovingSourceFile) {
+		if (!errorMovingSourceFile && !overQuota) {
 			info = type.process(new java.io.File(destinationSourceFilePath), new java.io.File(fileWorkingDir), this);
-			if (info == null) {
-				// this has success set to false
-				info = new FileTypeProcessReturnInfo();
+		}	
+		
+		if (info == null) {
+			// this has success set to false
+			info = new FileTypeProcessReturnInfo();
+			if (overQuota) {
+				info.msg = "There is no free storage space.";
+				logger.warn("Could not process file with id "+getId()+" because the web app is over the storage quota.");
 			}
-			if (!info.success) {
-				logger.warn("An error occurred when trying to process file with id "+getId()+".");
-			}
+		}
+		if (!info.success) {
+			logger.warn("An error occurred when trying to process file with id "+getId()+".");
 		}
 		
 		if (!errorMovingSourceFile) {
@@ -204,14 +214,15 @@ public class File {
 			}
 		}
 		
-		logger.debug("Removing files working directory...");
-		try {
-			FileUtils.forceDelete(new java.io.File(fileWorkingDir));
-			logger.debug("Removed files working directory.");
-		} catch (IOException e) {
-			logger.error("Error removing files working directory.");
+		if (!overQuota) {
+			logger.debug("Removing files working directory...");
+			try {
+				FileUtils.forceDelete(new java.io.File(fileWorkingDir));
+				logger.debug("Removed files working directory.");
+			} catch (IOException e) {
+				logger.error("Error removing files working directory.");
+			}
 		}
-		
 		logger.info("Finished processing file with id "+getId()+" and name '"+getName()+"'.");
 	}
 }

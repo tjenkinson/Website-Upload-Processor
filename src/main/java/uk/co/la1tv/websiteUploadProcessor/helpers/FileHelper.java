@@ -2,6 +2,7 @@ package uk.co.la1tv.websiteUploadProcessor.helpers;
 
 import java.io.File;
 import java.io.IOException;
+import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Paths;
@@ -72,5 +73,10 @@ public class FileHelper {
 		File destinationLocation = new File(FileHelper.format(Config.getInstance().getString("files.webappFilesLocation")+"/"+id));
 		destinationLocation.delete(); // delete file at destination (if there is one)
 		return source.renameTo(destinationLocation);
+	}
+	
+	public static boolean isOverQuota() {
+		Config config = Config.getInstance();		
+		return FileUtils.sizeOfAsBigInteger(new File(FileHelper.format(config.getString("files.webappFilesLocation")))).compareTo(config.getBigInteger("general.webAppSpaceQuota").multiply(new BigInteger("1000000"))) > 0 ;
 	}
 }
