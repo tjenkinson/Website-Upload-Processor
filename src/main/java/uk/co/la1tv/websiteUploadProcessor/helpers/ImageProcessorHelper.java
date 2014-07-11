@@ -1,5 +1,6 @@
 package uk.co.la1tv.websiteUploadProcessor.helpers;
 
+import java.math.BigInteger;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -62,12 +63,19 @@ public class ImageProcessorHelper {
 	 */
 	public static boolean process(FileTypeProcessReturnInfo returnVal, java.io.File source, java.io.File workingDir, List<ImageFormat> formats, ImageMagickFormat inputFormat, ImageMagickFormat outputFormat, File file, FileType outputFileType) {
 		
+		BigInteger totalSize = BigInteger.ZERO;
+		
 		for (ImageFormat f : formats) {
 			logger.debug("Executing ImageMagick to process image file for source file with width "+f.w+" and height "+f.h+".");
 			int exitVal = ImageProcessorHelper.renderImage(inputFormat, outputFormat, source, f.outputFile, workingDir, f.w, f.h);
 			if (exitVal != 0) {
 				logger.warn("ImageMagick finished processing image but returned error code "+exitVal+".");
 				returnVal.msg = "Error processing image.";
+				return false;
+			}
+			totalSize.add(new BigInteger(""+f.outputFile.length()));
+			if (FileHelper.isOverQuota(totalSize)) {
+				returnVal.msg = "Ran out of space.";
 				return false;
 			}
 		}

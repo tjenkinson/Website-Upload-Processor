@@ -1,5 +1,6 @@
 package uk.co.la1tv.websiteUploadProcessor.fileTypes;
 
+import java.math.BigInteger;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -37,6 +38,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 		// ids of files that should be marked in_use when the process_state is updated at the end of processing
 		returnVal.fileIdsToMarkInUse = new HashSet<Integer>();
 		FfmpegFileInfo info;
+		BigInteger totalSize = BigInteger.ZERO;
 		
 		DbHelper.updateStatus(file.getId(), "Checking video format.", null);
 		// get source file information.
@@ -116,6 +118,11 @@ public class VODVideoFileType extends FileTypeAbstract {
 			monitor.destroy();
 			if (exitVal == 0) {
 				logger.debug("ffmpeg finished successfully with error code "+exitVal+".");
+				totalSize.add(new BigInteger(""+f.outputFile.length()));
+				if (FileHelper.isOverQuota(totalSize)) {
+					returnVal.msg = "Ran out of space.";
+					return returnVal;
+				}
 			}
 			else {
 				logger.warn("ffmpeg finished but returned error code "+exitVal+".");

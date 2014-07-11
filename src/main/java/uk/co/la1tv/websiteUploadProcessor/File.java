@@ -1,10 +1,12 @@
 package uk.co.la1tv.websiteUploadProcessor;
 
 import java.io.IOException;
+import java.math.BigInteger;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+
 import org.apache.commons.io.FileUtils;
 import org.apache.log4j.Logger;
 
@@ -70,6 +72,7 @@ public class File {
 		boolean errorMovingSourceFile = false;
 		// true if the webapp folder is over quota meaning the job should be failed.
 		boolean overQuota = FileHelper.isOverQuota();
+		boolean workingDirCreated = false;
 		FileTypeProcessReturnInfo info = null;
 		
 		logger.info("Started processing file with id "+getId()+" and name '"+getName()+"'.");
@@ -88,6 +91,7 @@ public class File {
 			} catch (IOException e) {
 				throw(new RuntimeException("Error creating folder for file to process."));
 			}
+			workingDirCreated = true; // Purposefully put this outside try block in case it it is partly created maybe, in which case it would still be good to attempt to delete it later.
 			logger.debug("Created folder for file in working directory.");
 			
 			if (config.getBoolean("general.workWithCopy")) {
@@ -105,7 +109,7 @@ public class File {
 		
 		if (!errorMovingSourceFile && !overQuota) {
 			info = type.process(new java.io.File(destinationSourceFilePath), new java.io.File(fileWorkingDir), this);
-		}	
+		}
 		
 		if (info == null) {
 			// this has success set to false
@@ -121,17 +125,28 @@ public class File {
 		
 		if (!errorMovingSourceFile) {
 			
+			java.io.File sourceFile = new java.io.File(sourceFilePath);
+			
+			// check if would be over quote now when source file moved across
+			if (FileHelper.isOverQuota(new BigInteger(""+sourceFile.length()))) {
+				overQuota = true;
+				if (info.success) {
+					info.msg = "Ran out of space.";
+					info.success = false;
+				}
+			}
+			
 			// move source file from pending folder to main files folder if processing was successful, otherwise remove source file
 			if (info.success) {
 				// move file from pending to main folder
-				if (!FileHelper.moveToWebApp(new java.io.File(sourceFilePath), getId())) {
+				if (!FileHelper.moveToWebApp(sourceFile, getId())) {
 					logger.error("An error occurred trying to move the source file with id "+getId()+" from the pending folder to the main folder.");
 					errorMovingSourceFile = true;
 				}
 			}
 			else {
 				// delete file from pending
-				if (!new java.io.File(sourceFilePath).delete()) {
+				if (!sourceFile.delete()) {
 					logger.warn("Failed to delete file with it "+getId()+" from pending directory as it failed processing. It might have failed proecssing because it was missing for some reason so this might be ok.");
 				}
 			}
@@ -214,7 +229,7 @@ public class File {
 			}
 		}
 		
-		if (!overQuota) {
+		if (workingDirCreated) {
 			logger.debug("Removing files working directory...");
 			try {
 				FileUtils.forceDelete(new java.io.File(fileWorkingDir));
