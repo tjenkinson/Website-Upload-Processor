@@ -71,6 +71,7 @@ public class File {
 		
 		logger.info("Started processing file with id "+getId()+" and name '"+getName()+"'.");
 		DbHelper.updateStatus(getId(), "Started processing.", null);
+		
 		logger.debug("Creating folder for file in working directory...");
 		String fileWorkingDir = FileHelper.getFileWorkingDir(getId());
 		String sourceFilePath = FileHelper.getSourcePendingFilePath(getId());
@@ -110,10 +111,19 @@ public class File {
 		
 		if (!errorMovingSourceFile) {
 			
-			// move source file from pending folder to main files folder
-			if (!FileHelper.moveToWebApp(new java.io.File(sourceFilePath), getId())) {
-				logger.error("An error occurred trying to move the source file with id "+getId()+" from the pending folder to the main folder.");
-				errorMovingSourceFile = true;
+			// move source file from pending folder to main files folder if processing was successful, otherwise remove source file
+			if (info.success) {
+				// move file from pending to main folder
+				if (!FileHelper.moveToWebApp(new java.io.File(sourceFilePath), getId())) {
+					logger.error("An error occurred trying to move the source file with id "+getId()+" from the pending folder to the main folder.");
+					errorMovingSourceFile = true;
+				}
+			}
+			else {
+				// delete file from pending
+				if (!new java.io.File(sourceFilePath).delete()) {
+					logger.warn("Failed to delete file with it "+getId()+" from pending directory as it failed processing. It might have failed proecssing because it was missing for some reason so this might be ok.");
+				}
 			}
 		}
 		
