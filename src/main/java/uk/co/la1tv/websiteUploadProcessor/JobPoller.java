@@ -91,7 +91,12 @@ public class JobPoller {
 						logger.error("A file id was retrieved from the database for processing but this id was already in the queue. This shouldn't happen because it should have been excluded as a result of the heartbeat.");
 						continue;
 					}
-					// TODO: get rid of queue and only add for processing when thread available
+					
+					if (filesInProgress.size() >= config.getInt("general.noThreads")) {
+						logger.info("File with id "+file.getId()+" will not be picked up at the moment as there are no free threads available.");
+						continue;
+					}
+					
 					if (!heartbeatManager.registerFile(file)) {
 						logger.info("File with id "+file.getId()+" will not be processed because it's heartbeat was updated somewhere else.");
 						continue;

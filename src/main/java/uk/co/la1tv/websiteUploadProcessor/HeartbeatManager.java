@@ -11,7 +11,6 @@ import java.util.TimerTask;
 
 import org.apache.log4j.Logger;
 
-import uk.co.la1tv.websiteUploadProcessor.fileTypes.FileType;
 import uk.co.la1tv.websiteUploadProcessor.helpers.DbHelper;
 
 public class HeartbeatManager {
