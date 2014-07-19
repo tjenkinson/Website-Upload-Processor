@@ -13,7 +13,7 @@ public class Job implements Runnable {
 	@Override
 	public void run() {
 		file.process();
-		completionHandler.markCompletion(file.getId());
+		completionHandler.markCompletion(file);
 	}
 
 }

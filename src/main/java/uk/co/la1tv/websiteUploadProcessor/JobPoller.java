@@ -31,22 +31,24 @@ public class JobPoller {
 	
 	private static Logger logger = Logger.getLogger(JobPoller.class);
 	
-	// contains the ids of files that have been added to the threadPool for processing
-	// ids are removed after the relevant process has completed.
+	// contains the Files that have been added to the threadPool for processing
+	// they are removed after the relevant process has completed.
 	// when the processing has completed they won't be picked up again because the conditions for picking up a job will no longer be met in the database query
-	private LinkedHashSet<Integer> queue = new LinkedHashSet<>();
+	private LinkedHashSet<File> filesInProgress = new LinkedHashSet<>();
 	private ExecutorService threadPool;
 	private TaskCompletionHandler taskCompletionHandler;
 	private Timer timer;
 	private Config config;
+	private HeartbeatManager heartbeatManager;
 	
 	private Object lock1 = new Object();
 	
 	public JobPoller() {
-		logger.info("Loading Job Poller...");	
+		logger.info("Loading Job Poller...");
 		config = Config.getInstance();
 		threadPool = Executors.newFixedThreadPool(config.getInt("general.noThreads"));
 		taskCompletionHandler = new TaskCompletionHandler();
+		heartbeatManager = new HeartbeatManager();
 		timer = new Timer(false);
 		timer.schedule(new PollTask(), 0, config.getInt("general.pollInterval")*1000);
 		logger.info("Job poller loaded.");
@@ -69,29 +71,34 @@ public class JobPoller {
 			logger.info("Polling for files that need processing...");
 			try {
 				Connection dbConnection = db.getConnection();
-				PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE process_state=0 AND ready_for_delete=0"+getFileTypeIdsWhereString("file_type_id")+getFileIdsWhereString("id")+" ORDER BY updated_at DESC");
+				PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE process_state=0 AND ready_for_delete=0 AND (heartbeat IS NULL OR heartbeat<?)"+getFileTypeIdsWhereString("file_type_id")+" ORDER BY updated_at DESC");
 				int i = 1;
+				s.setTimestamp(i++, heartbeatManager.getProcessingFilesTimestamp());
 				for (FileType a : FileType.values()) {
 					s.setInt(i++, a.getObj().getId());
 				}
-				for (Integer a : queue) {
-					s.setInt(i++, a);
-				}
+				
 				ResultSet r = s.executeQuery();
 				
 				while(r.next()) {
 					logger.info("Looking at file with id "+r.getInt("id")+".");
 					
+					// create File obj
+					File file = DbHelper.buildFileFromResult(r);
+					
 					// check this file id is not in the queue. It shouldn't be. If it is then there was something wrong with the db query!
-					if (queue.contains(r.getInt("id"))) {
-						logger.error("A file id was retrieved from the database for processing but this id was already in the queue. This shouldn't happen because it should have been excluded in the database query.");
+					if (filesInProgress.contains(file)) {
+						logger.error("A file id was retrieved from the database for processing but this id was already in the queue. This shouldn't happen because it should have been excluded as a result of the heartbeat.");
+						continue;
+					}
+					// TODO: get rid of queue and only add for processing when thread available
+					if (!heartbeatManager.registerFile(file)) {
+						logger.info("File with id "+file.getId()+" will not be processed because it's heartbeat was updated somewhere else.");
 						continue;
 					}
 					
-					// create File obj
-					File file = DbHelper.buildFileFromResult(r);
 					DbHelper.updateStatus(file.getId(), "Added to process queue.", null);
-					queue.add(r.getInt("id"));
+					filesInProgress.add(file);
 					threadPool.execute(new Job(taskCompletionHandler, file));
 					logger.info("Created and scheduled process job for file with id "+r.getInt("id")+".");
 				}	
@@ -108,13 +115,11 @@ public class JobPoller {
 			try {
 				Connection dbConnection = db.getConnection();
 				// the ordering makes sure that records with source_file_id set appear first. As these must be deleted first
-				PreparedStatement s = dbConnection.prepareStatement("SELECT o.id, o.filename, o.size, o.file_type_id, i.id, i.filename, i.size, i.file_type_id FROM files AS o LEFT JOIN files AS i ON i.source_file_id = o.id WHERE (o.ready_for_delete=1 OR (o.in_use=0 AND o.session_id IS NULL))"+getFileTypeIdsWhereString("o.file_type_id")+getFileIdsWhereString("o.id")+" ORDER BY (CASE WHEN i.id IS NULL THEN 1 ELSE 0 END) ASC");
+				PreparedStatement s = dbConnection.prepareStatement("SELECT o.id, o.filename, o.size, o.file_type_id, i.id, i.filename, i.size, i.file_type_id FROM files AS o LEFT JOIN files AS i ON i.source_file_id = o.id WHERE ((o.heartbeat IS NULL OR o.heartbeat<?) AND (o.ready_for_delete=1 OR (o.in_use=0 AND o.session_id IS NULL)))"+getFileTypeIdsWhereString("o.file_type_id")+" ORDER BY (CASE WHEN i.id IS NULL THEN 1 ELSE 0 END) ASC");
 				int i = 1;
+				s.setTimestamp(i++, heartbeatManager.getProcessingFilesTimestamp());
 				for (FileType a : FileType.values()) {
 					s.setInt(i++, a.getObj().getId());
-				}
-				for (Integer a : queue) {
-					s.setInt(i++, a);
 				}
 				ResultSet r = s.executeQuery();
 				ArrayList<File> recordsToDelete = new ArrayList<File>();
@@ -178,23 +183,7 @@ public class JobPoller {
 			}
 			logger.info("Finished polling for files pending deletion.");
 		}
-		
-		// get string with placeholders for file ids that should not be returned from queries because they are currently being processed
-		private String getFileIdsWhereString(String col) {
-			String fileIdsWhere = "";
-			if (queue.size() > 0) {
-				fileIdsWhere = " AND "+col+" NOT IN (";
-				for (int i=0; i<queue.size(); i++) {
-					if (i > 0) {
-						fileIdsWhere += ",";
-					}
-					fileIdsWhere += "?";
-				}
-				fileIdsWhere += ")";
-			}
-			return fileIdsWhere;
-		}
-		
+
 		private String getFileTypeIdsWhereString(String col) {
 			// the ids of the file types that we know about.
 			// we are not interested in any other file type ids that aren't listed
@@ -220,9 +209,10 @@ public class JobPoller {
 		 * Called from a Task after it's complete just before it finishes.
 		 * @param file
 		 */
-		public void markCompletion(int id) {
+		public void markCompletion(File file) {
 			synchronized(lock1) {
-				queue.remove(id);
+				heartbeatManager.unRegisterFile(file);
+				filesInProgress.remove(file);
 			}
 		}
 	}
