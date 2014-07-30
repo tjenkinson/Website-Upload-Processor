@@ -64,7 +64,9 @@ public class DbHelper {
 				s.setNull(2, Types.INTEGER);
 			}
 			s.setInt(3, fileId);
-			return s.executeUpdate() == 1;
+			boolean result = s.executeUpdate() == 1;
+			s.close();
+			return result;
 		} catch (SQLException e) {
 			throw(new RuntimeException("Database error whilst trying to update process status."));
 		}

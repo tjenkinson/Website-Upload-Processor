@@ -106,7 +106,8 @@ public class JobPoller {
 					filesInProgress.add(file);
 					threadPool.execute(new Job(taskCompletionHandler, file));
 					logger.info("Created and scheduled process job for file with id "+r.getInt("id")+".");
-				}	
+				}
+				s.close();
 			} catch (SQLException e) {
 				logger.error("SQLException when trying to query databases for files that need processing.");
 			}
@@ -148,7 +149,7 @@ public class JobPoller {
 						recordsToDelete.add(f);
 					}
 				}
-				
+				s.close();
 				// delete actual files
 				for(File file : recordsToDelete) {
 					String sourceFilePath = FileHelper.getSourceFilePath(file.getId());

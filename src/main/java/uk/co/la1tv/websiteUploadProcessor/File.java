@@ -159,8 +159,7 @@ public class File {
 			try {
 				logger.trace("Starting database transaction.");
 				dbConnection.prepareStatement("START TRANSACTION").executeUpdate();
-				PreparedStatement s;
-				s = dbConnection.prepareStatement("SELECT * FROM files WHERE id=?");
+				PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE id=?");
 				s.setInt(1, getId());
 				ResultSet r = s.executeQuery();
 				if (!r.next()) {
@@ -184,14 +183,14 @@ public class File {
 							query += "?";
 						}
 						query += ")";
-						s = dbConnection.prepareStatement(query);
+						PreparedStatement s2 = dbConnection.prepareStatement(query);
 						{
 							int i=1;
 							for(Integer id : info.fileIdsToMarkInUse) {
-								s.setInt(i++, id);
+								s2.setInt(i++, id);
 							}
 						}
-						if (s.executeUpdate() != info.fileIdsToMarkInUse.size()) {
+						if (s2.executeUpdate() != info.fileIdsToMarkInUse.size()) {
 							logger.error("Error occurred setting in_use to 1. Processing will be marked as failing.");
 							// rollback to make sure if some were marked as in_use they all get reverted back
 							dbConnection.prepareStatement("ROLLBACK").executeUpdate();
@@ -200,15 +199,15 @@ public class File {
 							// causes processing to be marked as failure
 							info.success = false;
 						}
+						s2.close();
 					}
-					
 					
 					// update process_state and set error message
 					DbHelper.updateStatus(getId(), !info.success ? info.msg : "", null);
-					s = dbConnection.prepareStatement("UPDATE files SET process_state=? WHERE id=?");
-					s.setInt(1, info.success ? 1 : 2); // a value of 1 represents success, 2 represents failure
-					s.setInt(2, getId());
-					if (s.executeUpdate() != 1) {
+					PreparedStatement s2 = dbConnection.prepareStatement("UPDATE files SET process_state=? WHERE id=?");
+					s2.setInt(1, info.success ? 1 : 2); // a value of 1 represents success, 2 represents failure
+					s2.setInt(2, getId());
+					if (s2.executeUpdate() != 1) {
 						logger.trace("Rolling back database transaction.");
 						dbConnection.prepareStatement("ROLLBACK").executeUpdate();
 						logger.error("Error occurred updating process_state for file with id "+getId()+".");
@@ -218,7 +217,9 @@ public class File {
 						dbConnection.prepareStatement("COMMIT").executeUpdate();
 						logger.debug("Updated process_state in database.");
 					}
+					s2.close();
 				}
+				s.close();
 			} catch (SQLException e) {
 				try {
 					dbConnection.prepareStatement("ROLLBACK").executeUpdate();

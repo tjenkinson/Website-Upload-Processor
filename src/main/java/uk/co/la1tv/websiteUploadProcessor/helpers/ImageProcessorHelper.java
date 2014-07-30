@@ -99,12 +99,14 @@ public class ImageProcessorHelper {
 				s.setInt(4, outputFileType.getObj().getId());
 				s.setInt(5, file.getId());
 				if (s.executeUpdate() != 1) {
+					s.close();
 					logger.warn("Error occurred when creating database entry for a file.");
 					return false;
 				}
 				ResultSet generatedKeys = s.getGeneratedKeys();
 				generatedKeys.next();
 				f.id = generatedKeys.getInt(1);
+				s.close();
 				logger.debug("File record created with id "+f.id+" for image render with width "+f.w+" and height "+f.h+" belonging to source file with id "+file.getId()+".");
 				
 				// add to set of files to mark in_use when processing completed
@@ -145,7 +147,9 @@ public class ImageProcessorHelper {
 				s.setTimestamp(3, currentTimestamp);
 				s.setTimestamp(4, currentTimestamp);
 				s.setInt(5, o.id);
-				if (s.executeUpdate() != 1) {
+				int result = s.executeUpdate();
+				s.close();
+				if (result != 1) {
 					logger.debug("Error registering file with id "+o.id+" in image_files table.");
 					return false;
 				}

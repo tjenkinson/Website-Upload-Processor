@@ -49,11 +49,13 @@ public class HeartbeatManager {
 			if (!r.next()) {
 				logger.debug("Error trying to register file with id "+file.getId()+". It could not be found. Could have just been deleted.");
 				dbConnection.prepareStatement("COMMIT").executeUpdate();
+				s.close();
 				return false;
 			}
 			
 			// check that that the heartbeat hasn't been updates somewhere else
 			Timestamp lastHeartbeat = r.getTimestamp("heartbeat");
+			s.close();
 			if (lastHeartbeat != null && lastHeartbeat.getTime() >= getProcessingFilesTimestamp().getTime()) {
 				logger.debug("Could not register file with id "+file.getId()+" because it appears that it has been updated somewhere else.");
 				dbConnection.prepareStatement("COMMIT").executeUpdate();
@@ -65,7 +67,9 @@ public class HeartbeatManager {
 			Timestamp currentTimestamp = new Timestamp(System.currentTimeMillis());
 			s.setTimestamp(1, currentTimestamp);
 			s.setInt(2,  file.getId());
-			if (s.executeUpdate() != 1) {
+			int result = s.executeUpdate();
+			s.close();
+			if (result != 1) {
 				dbConnection.prepareStatement("ROLLBACK").executeUpdate();
 				return false;
 			}
@@ -133,6 +137,7 @@ public class HeartbeatManager {
 					if (s.executeUpdate() != files.size()) {
 						logger.warn("Error occurred when updating heartbeat timestamps.");
 					}
+					s.close();
 				
 				} catch (SQLException e) {
 					throw(new RuntimeException("Error trying to update files from HeartbeatManager."));

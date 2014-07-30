@@ -96,8 +96,10 @@ public class VODVideoFileType extends FileTypeAbstract {
 				}
 				if (r.getBoolean("ready_for_delete")) {
 					logger.debug("VOD with id "+file.getId()+" has been marked for deletion so not processing any more.");
+					s.close();
 					return returnVal;
 				}
+				s.close();
 			} catch (SQLException e) {
 				throw(new RuntimeException("SQL error when trying to check if file still hasn't been deleted."));
 			}
@@ -134,8 +136,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 		}
 		
 		
-		// this order is important to make sure if anything goes wrong there aren't any files left in the webapp files folder without a corresponding entry in the db
-		
+		// this order is important to make sure if anything goes wrong there aren't any files left in the webapp files folder without a corresponding entry in the db		
 		// create entries in Files with in_use set to 0
 		// and copy files across to web app
 
@@ -155,12 +156,14 @@ public class VODVideoFileType extends FileTypeAbstract {
 				s.setInt(4, FileType.VOD_VIDEO_RENDER.getObj().getId());
 				s.setInt(5, file.getId());
 				if (s.executeUpdate() != 1) {
+					s.close();
 					logger.warn("Error occurred when creating database entry for a file.");
 					return returnVal;
 				}
 				ResultSet generatedKeys = s.getGeneratedKeys();
 				generatedKeys.next();
 				f.id = generatedKeys.getInt(1);
+				s.close();
 				logger.debug("File record created with id "+f.id+" for render with height "+f.h+" belonging to source file with id "+file.getId()+".");
 				
 				// add to set of files to mark in_use when processing completed
@@ -199,7 +202,9 @@ public class VODVideoFileType extends FileTypeAbstract {
 				s.setTimestamp(4, currentTimestamp);
 				s.setInt(5, o.qualityDefinitionId);
 				s.setInt(6, o.id);
-				if (s.executeUpdate() != 1) {
+				int result = s.executeUpdate();
+				s.close();
+				if (result != 1) {
 					logger.debug("Error registering file with id "+o.id+" in video_files table.");
 					return returnVal;
 				}
