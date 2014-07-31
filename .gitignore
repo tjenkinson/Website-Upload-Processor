@@ -2,6 +2,7 @@
 /.project
 /.classpath
 /dependency-reduced-pom.xml
+/bin
 /files
 /ffmpeg
 /image-magick

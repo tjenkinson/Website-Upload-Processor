@@ -1,0 +1,13 @@
+# this should be copied to config.properties in this folder, and then completed.
+
+db.host = 
+db.database = 
+db.username = 
+db.password = 
+ffmpeg.location = 
+ffmpeg.probeLocation = 
+imagemagick.convertLocation = 
+imagemagick.identifyLocation = 
+files.webappFilesLocation = 
+files.webappPendingFilesLocation = 
+files.workingFilesLocation = 
