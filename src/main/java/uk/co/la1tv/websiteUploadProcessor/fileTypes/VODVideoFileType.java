@@ -58,23 +58,36 @@ public class VODVideoFileType extends FileTypeAbstract {
 		
 		// get video height
 		int sourceFileH = info.getH();
-		List<Object> allFormats = config.getList("encoding.vodFormats");
+		List<Object> allFormatsConfig = config.getList("encoding.vodFormats");
 		
 		final ArrayList<Format> formats = new ArrayList<Format>();
-		for (Object f : allFormats) {
+		final ArrayList<Format> formatsToRender = new ArrayList<Format>();
+		// set to the height that is one resolution larger than the source file
+		int largerHeightToRender = -1;
+		// build up array of format objects
+		for (Object f : allFormatsConfig) {
 			String[] a = ((String) f).split("-");
 			int qualityDefinitionId = Integer.parseInt(a[0]);
 			int h = Integer.parseInt(a[1]);
 			h += h%2; // height (and width) must be multiple of 2 for libx codec
 			int aBitrate = Integer.parseInt(a[2]);
 			int vBitrate = Integer.parseInt(a[3]);
-			if (h > sourceFileH) {
-				// there's no point rendering to versions with a larger height than the source file
-				logger.debug("Not rendering height "+h+" because it is more than the source file's height.");
+			Format format = new Format(qualityDefinitionId, h, aBitrate, vBitrate, new java.io.File(FileHelper.format(workingDir.getAbsolutePath()+"/")+"output_"+h), new java.io.File(FileHelper.format(workingDir.getAbsolutePath()+"/")+"progress_"+h));
+			formats.add(format);
+			if ((largerHeightToRender == -1 || format.h < largerHeightToRender) && format.h >= sourceFileH) {
+				largerHeightToRender = format.h;
+			}
+		}
+		
+		// determine which resolutions to render. Should render one resolution higher than the source resolution, unless it matches a resolution exactly
+		for (Format f : formats) {
+			if (f.h > sourceFileH && sourceFileH != largerHeightToRender) {
+				logger.debug("Not rendering height "+f.h+" because it is more than the source file's height.");
 				continue;
 			}
-			formats.add(new Format(qualityDefinitionId, h, aBitrate, vBitrate, new java.io.File(FileHelper.format(workingDir.getAbsolutePath()+"/")+"output_"+h), new java.io.File(FileHelper.format(workingDir.getAbsolutePath()+"/")+"progress_"+h)));
+			formatsToRender.add(f);
 		}
+		
 		
 		ArrayList<OutputFile> outputFiles = new ArrayList<OutputFile>();
 		
@@ -84,7 +97,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 		DbHelper.updateStatus(file.getId(), renderRequiredFormatsMsg, 0);
 		
 		// loop through different formats and render videos for ones that are applicable
-		for (final Format f : formats) {
+		for (final Format f : formatsToRender) {
 			
 			// check if file is now marked for deletion
 			try {
@@ -112,7 +125,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 				public void run() {
 					// called whenever the process percentage changes
 					// calculate the actual percentage when taking all renders into account
-					int actualPercentage = (int) Math.floor(((float) monitor.getPercentage()/formats.size()) + (formats.indexOf(f)*(100.0/formats.size())));
+					int actualPercentage = (int) Math.floor(((float) monitor.getPercentage()/formatsToRender.size()) + (formatsToRender.indexOf(f)*(100.0/formatsToRender.size())));
 					DbHelper.updateStatus(file.getId(), renderRequiredFormatsMsg, actualPercentage);
 				}
 			});
@@ -142,7 +155,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 
 		DbHelper.updateStatus(file.getId(), "Finalizing renders.", null);
 		try {
-			for (Format f : formats) {
+			for (Format f : formatsToRender) {
 				
 				long size = f.outputFile.length(); // size of file in bytes
 				
