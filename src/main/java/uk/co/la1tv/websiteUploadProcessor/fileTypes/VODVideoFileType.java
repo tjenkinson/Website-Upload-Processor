@@ -81,7 +81,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 		
 		// determine which resolutions to render. Should render one resolution higher than the source resolution, unless it matches a resolution exactly
 		for (Format f : formats) {
-			if (f.h > sourceFileH && sourceFileH != largerHeightToRender) {
+			if (f.h > sourceFileH && f.h != largerHeightToRender) {
 				logger.debug("Not rendering height "+f.h+" because it is more than the source file's height.");
 				continue;
 			}
