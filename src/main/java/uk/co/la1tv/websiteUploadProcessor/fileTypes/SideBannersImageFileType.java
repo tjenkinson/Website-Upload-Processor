@@ -39,13 +39,7 @@ public class SideBannersImageFileType extends FileTypeAbstract {
 		}
 		
 		final List<ImageFormat> formats = ImageProcessorHelper.getFormats(config.getList("encoding.sideBannerImageFormats"), workingDir);
-		
-		// check that resolution is correct. must match the first format
-		ImageMagickFileInfo info = ImageMagickHelper.getFileInfo(inputFormat, source, workingDir);
-		if (formats.size() > 0 && (info.getW() != formats.get(0).w || info.getH() != formats.get(0).h)) {
-			returnVal.msg = "Incorrect image size. Must be "+formats.get(0).w+"x"+formats.get(0).h+".";
-			return returnVal;
-		}
+	
 		returnVal.success = ImageProcessorHelper.process(returnVal, source, workingDir, formats, inputFormat, ImageMagickFormat.JPG, file, FileType.SIDE_BANNER_IMAGES_RENDER);
 		return returnVal;
 	}
