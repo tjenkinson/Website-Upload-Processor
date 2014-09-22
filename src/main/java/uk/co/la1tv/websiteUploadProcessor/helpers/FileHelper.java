@@ -72,7 +72,20 @@ public class FileHelper {
 	public static boolean moveToWebApp(File source, int id) {
 		File destinationLocation = new File(FileHelper.format(Config.getInstance().getString("files.webappFilesLocation")+"/"+id));
 		destinationLocation.delete(); // delete file at destination (if there is one)
-		return source.renameTo(destinationLocation);
+		// TODO: tmp remove
+		logger.debug("DEBUGGING");
+		try {
+			FileUtils.copyFile(source, destinationLocation);
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return true;
+		
+	//	return source.renameTo(destinationLocation);
+		
+		
+		
 	}
 	
 	public static boolean isOverQuota() {
