@@ -73,7 +73,7 @@ public class FileHelper {
 		File destinationLocation = new File(FileHelper.format(Config.getInstance().getString("files.webappFilesLocation")+"/"+id));
 		destinationLocation.delete(); // delete file at destination (if there is one)
 		
-		// this was originally a source.renameTo(destinationLocation) to move the file but this wasn't working when the storage directory was on a different drive for some reason. The copy then delete does. Don't know why.
+		// this was originally a source.renameTo(destinationLocation) to move the file but this wasn't working when the storage directory was on a different drive for some reason. The copy then delete does. Probably down to this: http://stackoverflow.com/a/300562/1048589 ("File.renameTo generally works only on the same file system volume. I think of this as the equivalent to a "mv" command. Use it if you can, but for general copy and move support, you'll need to have a fallback.")
 		// first copy the file to the web app directory
 		try {
 			FileUtils.copyFile(source, destinationLocation);
