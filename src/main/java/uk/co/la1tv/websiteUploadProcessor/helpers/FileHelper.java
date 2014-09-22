@@ -72,20 +72,18 @@ public class FileHelper {
 	public static boolean moveToWebApp(File source, int id) {
 		File destinationLocation = new File(FileHelper.format(Config.getInstance().getString("files.webappFilesLocation")+"/"+id));
 		destinationLocation.delete(); // delete file at destination (if there is one)
-		// TODO: tmp remove
-		logger.debug("DEBUGGING");
+		
+		// this was originally a source.renameTo(destinationLocation) to move the file but this wasn't working when the storage directory was on a different drive for some reason. The copy then delete does. Don't know why.
+		// first copy the file to the web app directory
 		try {
 			FileUtils.copyFile(source, destinationLocation);
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+			throw(new RuntimeException("Error trying to copy file from to the web app."));
 		}
-		return true;
 		
-	//	return source.renameTo(destinationLocation);
-		
-		
-		
+		// now remove the original
+		source.delete();
+		return true;	
 	}
 	
 	public static boolean isOverQuota() {
