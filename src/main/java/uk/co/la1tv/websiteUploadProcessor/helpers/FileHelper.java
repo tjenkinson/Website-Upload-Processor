@@ -78,7 +78,7 @@ public class FileHelper {
 		try {
 			FileUtils.copyFile(source, destinationLocation);
 		} catch (IOException e) {
-			throw(new RuntimeException("Error trying to copy file from to the web app."));
+			return false;
 		}
 		
 		// now remove the original
