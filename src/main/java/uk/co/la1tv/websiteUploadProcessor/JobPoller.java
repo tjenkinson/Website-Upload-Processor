@@ -121,7 +121,7 @@ public class JobPoller {
 			try {
 				Connection dbConnection = db.getConnection();
 				// the ordering makes sure that records with source_file_id set appear first. As these must be deleted first
-				PreparedStatement s = dbConnection.prepareStatement("SELECT o.id, o.filename, o.size, o.file_type_id, i.id, i.filename, i.size, i.file_type_id FROM files AS o LEFT JOIN files AS i ON i.source_file_id = o.id WHERE o.source_file IS NULL AND ((o.heartbeat IS NULL OR o.heartbeat<?) AND (o.ready_for_delete=1 OR (o.in_use=0 AND o.session_id IS NULL)))"+getFileTypeIdsWhereString("o.file_type_id")+" ORDER BY (CASE WHEN i.id IS NULL THEN 1 ELSE 0 END) ASC");
+				PreparedStatement s = dbConnection.prepareStatement("SELECT o.id, o.filename, o.size, o.file_type_id, i.id, i.filename, i.size, i.file_type_id FROM files AS o LEFT JOIN files AS i ON i.source_file_id = o.id WHERE o.source_file_id IS NULL AND ((o.heartbeat IS NULL OR o.heartbeat<?) AND (o.ready_for_delete=1 OR (o.in_use=0 AND o.session_id IS NULL)))"+getFileTypeIdsWhereString("o.file_type_id")+" ORDER BY (CASE WHEN i.id IS NULL THEN 1 ELSE 0 END) ASC");
 				int i = 1;
 				s.setTimestamp(i++, heartbeatManager.getProcessingFilesTimestamp());
 				for (FileType a : FileType.values()) {
