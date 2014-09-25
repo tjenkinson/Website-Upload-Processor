@@ -146,10 +146,9 @@ public class File {
 			}
 			else {
 				// delete file from pending
-				// TODO: PUT THIS BACK!
-	//			if (!sourceFile.delete()) {
-	//				logger.warn("Failed to delete file with it "+getId()+" from pending directory as it failed processing. It might have failed proecssing because it was missing for some reason so this might be ok.");
-	//			}
+				if (!sourceFile.delete()) {
+					logger.warn("Failed to delete file with it "+getId()+" from pending directory as it failed processing. It might have failed proecssing because it was missing for some reason so this might be ok.");
+				}
 			}
 		}
 		
