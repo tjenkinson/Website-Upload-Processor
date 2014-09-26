@@ -112,7 +112,6 @@ public class JobPoller {
 				logger.error("SQLException when trying to query databases for files that need processing.");
 			}
 			logger.info("Finished polling for files that need processing.");
-			FileHelper.isOverQuota(); //TODO: remove. for debugging
 		}
 		
 		// look for files that are pending deletion, or temporary and no longer belong to a session, and delete them.

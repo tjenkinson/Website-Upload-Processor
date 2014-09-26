@@ -133,7 +133,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 			monitor.destroy();
 			if (exitVal == 0) {
 				logger.debug("ffmpeg finished successfully with error code "+exitVal+".");
-				totalSize.add(new BigInteger(""+f.outputFile.length()));
+				totalSize.add(BigInteger.valueOf(f.outputFile.length()));
 				if (FileHelper.isOverQuota(totalSize)) {
 					returnVal.msg = "Ran out of space.";
 					return returnVal;

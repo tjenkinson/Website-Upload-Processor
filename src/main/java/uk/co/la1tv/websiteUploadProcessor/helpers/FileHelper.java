@@ -92,10 +92,6 @@ public class FileHelper {
 	
 	public static boolean isOverQuota(BigInteger additional) {
 		Config config = Config.getInstance();
-		boolean tmp = FileUtils.sizeOfAsBigInteger(new File(FileHelper.format(config.getString("files.webappFilesLocation")))).compareTo(config.getBigInteger("general.webAppSpaceQuota").multiply(new BigInteger("1000000")).add(additional)) > 0;
-		
-		String tmp2 = tmp?"y":"n";
-		logger.debug("DEBUGGING: "+config.getBigInteger("general.webAppSpaceQuota").multiply(new BigInteger("1000000"))+" ------- "+FileUtils.sizeOfAsBigInteger(new File(FileHelper.format(config.getString("files.webappFilesLocation"))))+" -------- "+tmp2);
-		return tmp;
+		return FileUtils.sizeOfAsBigInteger(new File(FileHelper.format(config.getString("files.webappFilesLocation")))).compareTo(config.getBigInteger("general.webAppSpaceQuota").multiply(new BigInteger("1000000")).add(additional)) > 0;
 	}
 }

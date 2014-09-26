@@ -128,7 +128,7 @@ public class File {
 			java.io.File sourceFile = new java.io.File(sourceFilePath);
 			
 			// check if would be over quote now when source file moved across
-			if (FileHelper.isOverQuota(new BigInteger(""+sourceFile.length()))) {
+			if (FileHelper.isOverQuota(BigInteger.valueOf(sourceFile.length()))) {
 				overQuota = true;
 				if (info.success) {
 					info.msg = "Ran out of space.";
