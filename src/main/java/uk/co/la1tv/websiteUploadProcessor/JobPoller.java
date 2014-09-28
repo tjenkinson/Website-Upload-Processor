@@ -110,6 +110,7 @@ public class JobPoller {
 				s.close();
 			} catch (SQLException e) {
 				logger.error("SQLException when trying to query databases for files that need processing.");
+				e.printStackTrace();
 			}
 			logger.info("Finished polling for files that need processing.");
 		}
