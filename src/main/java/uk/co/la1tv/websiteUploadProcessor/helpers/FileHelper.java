@@ -78,6 +78,8 @@ public class FileHelper {
 		try {
 			FileUtils.copyFile(source, destinationLocation);
 		} catch (IOException e) {
+			logger.error("Exception when trying to move a file to the web app.");
+			e.printStackTrace();
 			return false;
 		}
 		
