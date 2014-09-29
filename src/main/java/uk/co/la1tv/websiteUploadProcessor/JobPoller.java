@@ -71,7 +71,7 @@ public class JobPoller {
 			logger.info("Polling for files that need processing...");
 			try {
 				Connection dbConnection = db.getConnection();
-				PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE ready_for_processing=1 AND process_state=0 AND ready_for_delete=0 AND (heartbeat IS NULL OR heartbeat<?)"+getFileTypeIdsWhereString("file_type_id")+" ORDER BY updated_at DESC");
+				PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE ready_for_processing=1 AND process_state=0 AND ready_for_delete=0 AND (session_id IS NOT NULL OR in_use=1) AND (heartbeat IS NULL OR heartbeat<?)"+getFileTypeIdsWhereString("file_type_id")+" ORDER BY updated_at DESC");
 				int i = 1;
 				s.setTimestamp(i++, heartbeatManager.getProcessingFilesTimestamp());
 				for (FileType a : FileType.values()) {
