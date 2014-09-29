@@ -41,7 +41,7 @@ public class DbHelper {
 	 * @throws SQLException
 	 */
 	public static File buildFileFromResult(ResultSet r) throws SQLException {
-		return new File(r.getInt("id"), r.getString("filename"), r.getInt("size"), FileType.getFromId(r.getInt("file_type_id")));
+		return new File(r.getInt("id"), r.getString("filename"), r.getDouble("size"), FileType.getFromId(r.getInt("file_type_id")));
 	}
 	
 	/**
