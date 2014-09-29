@@ -21,10 +21,10 @@ public class File {
 	
 	private int id;
 	private String name;
-	private int size;
+	private double size;
 	private FileTypeAbstract type;
 	
-	public File(int id, String name, int size, FileTypeAbstract type) {
+	public File(int id, String name, double size, FileTypeAbstract type) {
 	
 		this.id = id;
 		this.name = name;
@@ -51,7 +51,7 @@ public class File {
 		return name;
 	}
 	
-	public int getSize() {
+	public double getSize() {
 		return size;
 	}
 	

@@ -51,7 +51,7 @@ public class DbHelper {
 	 * @param percentage: The percentage of processing from 0-100. null means no percentage
 	 * @return boolean representing whether update successful.
 	 */
-	public static boolean updateStatus(int fileId, String msg, Integer percentage) {
+	public static boolean updateStatus(double d, String msg, Integer percentage) {
 		Db db = DbHelper.getMainDb();
 		try {
 			Connection connection = db.getConnection();
@@ -63,7 +63,7 @@ public class DbHelper {
 			else {
 				s.setNull(2, Types.INTEGER);
 			}
-			s.setInt(3, fileId);
+			s.setDouble(3, d);
 			boolean result = s.executeUpdate() == 1;
 			s.close();
 			return result;
