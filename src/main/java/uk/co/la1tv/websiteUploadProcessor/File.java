@@ -103,6 +103,7 @@ public class File {
 				} catch (IOException e) {
 					errorMovingSourceFile = true;
 					logger.error("Error copying file with id "+getId()+" from web app files location to working directory.");
+					e.printStackTrace();
 				}
 			}
 		}
