@@ -65,7 +65,7 @@ public class FileHelper {
 		return FileHelper.format(Config.getInstance().getString("files.webappFilesLocation")+"/"+fileId);
 	}
 
-	public static String getSourcePendingFilePath(double d) {
+	public static String getSourcePendingFilePath(int d) {
 		return FileHelper.format(Config.getInstance().getString("files.webappPendingFilesLocation")+"/"+d);
 	}
 	
