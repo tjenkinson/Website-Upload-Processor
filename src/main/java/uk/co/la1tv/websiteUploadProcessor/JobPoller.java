@@ -140,12 +140,12 @@ public class JobPoller {
 					
 					File f;
 					if (r.getInt("i.id") != 0) { // 0 returned if NULL
-						f = new File(r.getInt("i.id"), r.getString("i.filename"), r.getInt("i.size"), FileType.getFromId(r.getInt("i.file_type_id")));
+						f = new File(r.getInt("i.id"), r.getString("i.filename"), r.getDouble("i.size"), FileType.getFromId(r.getInt("i.file_type_id")));
 						if (!recordsToDelete.contains(f)) {
 							recordsToDelete.add(0, f);
 						}
 					}
-					f = new File(r.getInt("o.id"), r.getString("o.filename"), r.getInt("o.size"), FileType.getFromId(r.getInt("o.file_type_id")));		
+					f = new File(r.getInt("o.id"), r.getString("o.filename"), r.getDouble("o.size"), FileType.getFromId(r.getInt("o.file_type_id")));		
 					if (!recordsToDelete.contains(f)) {
 						recordsToDelete.add(f);
 					}
