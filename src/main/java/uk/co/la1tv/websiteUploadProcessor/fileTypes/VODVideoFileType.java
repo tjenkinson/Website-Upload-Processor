@@ -72,7 +72,8 @@ public class VODVideoFileType extends FileTypeAbstract {
 			h += h%2; // height (and width) must be multiple of 2 for libx codec
 			int aBitrate = Integer.parseInt(a[2]);
 			int vBitrate = Integer.parseInt(a[3]);
-			Format format = new Format(qualityDefinitionId, h, aBitrate, vBitrate, new java.io.File(FileHelper.format(workingDir.getAbsolutePath()+"/")+"output_"+h), new java.io.File(FileHelper.format(workingDir.getAbsolutePath()+"/")+"progress_"+h));
+			int fr = Integer.parseInt(a[4]);
+			Format format = new Format(qualityDefinitionId, h, aBitrate, vBitrate, fr, new java.io.File(FileHelper.format(workingDir.getAbsolutePath()+"/")+"output_"+h), new java.io.File(FileHelper.format(workingDir.getAbsolutePath()+"/")+"progress_"+h));
 			formats.add(format);
 			if ((largerHeightToRender == -1 || format.h < largerHeightToRender) && format.h >= sourceFileH) {
 				largerHeightToRender = format.h;
@@ -129,7 +130,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 					DbHelper.updateStatus(file.getId(), renderRequiredFormatsMsg, actualPercentage);
 				}
 			});
-			exitVal = RuntimeHelper.executeProgram(new String[] {config.getString("ffmpeg.location"), "-y", "-nostdin", "-timelimit", ""+config.getInt("ffmpeg.videoEncodeTimeLimit"), "-progress", ""+f.progressFile.getAbsolutePath(), "-i", source.getAbsolutePath(), "-vf", "scale=trunc(("+f.h+"*a)/2)*2:"+f.h, "-strict", "experimental", "-acodec", "aac", "-b:a", f.aBitrate+"k", "-ac", "2", "-ar", "48000", "-vcodec", "libx264", "-vprofile", "main", "-g", "48", "-b:v", f.vBitrate+"k", "-maxrate", f.vBitrate+"k", "-bufsize", f.vBitrate*2+"k", "-preset", "medium", "-crf", "18", "-f", "mp4", f.outputFile.getAbsolutePath()}, workingDir, null, null);
+			exitVal = RuntimeHelper.executeProgram(new String[] {config.getString("ffmpeg.location"), "-y", "-nostdin", "-timelimit", ""+config.getInt("ffmpeg.videoEncodeTimeLimit"), "-progress", ""+f.progressFile.getAbsolutePath(), "-i", source.getAbsolutePath(), "-vf", "scale=trunc(("+f.h+"*a)/2)*2:"+f.h, "-strict", "experimental", "-acodec", "aac", "-b:a", f.aBitrate+"k", "-ac", "2", "-ar", "48000", "-vcodec", "libx264", "-vprofile", "main", "-g", "48", "-b:v", f.vBitrate+"k", "-maxrate", f.vBitrate+"k", "-bufsize", f.vBitrate*2+"k", "-preset", "medium", "-crf", "18", "-r", f.fr+"", "-f", "mp4", f.outputFile.getAbsolutePath()}, workingDir, null, null);
 			monitor.destroy();
 			if (exitVal == 0) {
 				logger.debug("ffmpeg finished successfully with error code "+exitVal+".");
@@ -233,11 +234,12 @@ public class VODVideoFileType extends FileTypeAbstract {
 		
 	private class Format {
 		
-		public Format(int qualityDefinitionId, int h, int aBitrate, int vBitrate, java.io.File outputFile, java.io.File progressFile) {
+		public Format(int qualityDefinitionId, int h, int aBitrate, int vBitrate, int fr, java.io.File outputFile, java.io.File progressFile) {
 			this.qualityDefinitionId = qualityDefinitionId;
 			this.h = h;
 			this.aBitrate = aBitrate;
 			this.vBitrate = vBitrate;
+			this.fr = fr;
 			this.outputFile = outputFile;
 			this.progressFile = progressFile;
 		}
@@ -245,6 +247,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 		public int h;
 		public int aBitrate;
 		public int vBitrate;
+		public int fr;
 		public int qualityDefinitionId;
 		public int id;
 		public java.io.File outputFile;
