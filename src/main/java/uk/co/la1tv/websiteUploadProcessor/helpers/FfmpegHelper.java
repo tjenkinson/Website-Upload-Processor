@@ -2,6 +2,8 @@ package uk.co.la1tv.websiteUploadProcessor.helpers;
 
 import java.io.File;
 
+import org.apache.commons.math3.fraction.Fraction;
+import org.apache.commons.math3.fraction.FractionFormat;
 import org.apache.log4j.Logger;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -28,21 +30,28 @@ public class FfmpegHelper {
 		
 		// the output from ffmpegprobe should be pure json
 		JSONObject metadata;
+		int w;
+		int h;
+		double frameRate;
+		double duration;
+		double noFrames;
 		
 		try {
 			metadata = new JSONObject(streamMonitor.getOutput());
+			w = metadata.getJSONArray("streams").getJSONObject(0).getInt("width");
+			h = metadata.getJSONArray("streams").getJSONObject(0).getInt("height");
+			Fraction f = new FractionFormat().parse(metadata.getJSONArray("streams").getJSONObject(0).getString("r_frame_rate"));
+			frameRate = f.doubleValue();
+			duration = Double.parseDouble(metadata.getJSONObject("format").getString("duration"));
+			noFrames = Double.parseDouble(metadata.getJSONArray("streams").getJSONObject(0).getString("nb_frames"));
 		}
 		catch(JSONException e) {
 			logger.warn("Error parsing JSON from ffprobe for file '"+file.getAbsolutePath()+"'.");
+			e.printStackTrace();
 			return null;
 		}
 		
-		int w = metadata.getJSONArray("streams").getJSONObject(0).getInt("width");
-		int h = metadata.getJSONArray("streams").getJSONObject(0).getInt("height");
-		double duration = Double.parseDouble(metadata.getJSONObject("format").getString("duration"));
-		double noFrames = Double.parseDouble(metadata.getJSONArray("streams").getJSONObject(0).getString("nb_frames"));
-		
-		return new FfmpegFileInfo(w, h, duration, noFrames);
+		return new FfmpegFileInfo(w, h, frameRate, duration, noFrames);
 	}
 	
 }
