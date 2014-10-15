@@ -72,8 +72,17 @@ public class VODVideoFileType extends FileTypeAbstract {
 			h += h%2; // height (and width) must be multiple of 2 for libx codec
 			int aBitrate = Integer.parseInt(a[2]);
 			int vBitrate = Integer.parseInt(a[3]);
-			int fr = Integer.parseInt(a[4]);
-			Format format = new Format(qualityDefinitionId, h, aBitrate, vBitrate, fr, new java.io.File(FileHelper.format(workingDir.getAbsolutePath()+"/")+"output_"+h), new java.io.File(FileHelper.format(workingDir.getAbsolutePath()+"/")+"progress_"+h));
+			double maxFr = Double.parseDouble(a[4]);
+			double sourceFr = info.getFrameRate();
+			double outputFr = sourceFr;
+			// calculate the output frame rate.
+			// it should be the source frame rate if it is <= maxFr
+			// otherwise keep halving sourceFr until this is the case
+			while (outputFr > maxFr) {
+				outputFr = outputFr/2;
+			}
+			
+			Format format = new Format(qualityDefinitionId, h, aBitrate, vBitrate, outputFr, new java.io.File(FileHelper.format(workingDir.getAbsolutePath()+"/")+"output_"+h), new java.io.File(FileHelper.format(workingDir.getAbsolutePath()+"/")+"progress_"+h));
 			formats.add(format);
 			if ((largerHeightToRender == -1 || format.h < largerHeightToRender) && format.h >= sourceFileH) {
 				largerHeightToRender = format.h;
@@ -118,7 +127,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 				throw(new RuntimeException("SQL error when trying to check if file still hasn't been deleted."));
 			}
 			
-			logger.debug("Executing ffmpeg for height "+f.h+" and audio bitrate "+f.aBitrate+"kbps, video bitrate "+f.vBitrate+"kbps.");
+			logger.debug("Executing ffmpeg for height "+f.h+" and audio bitrate "+f.aBitrate+"kbps, video bitrate "+f.vBitrate+"kbps with frame rate "+f.fr+" fps.");
 			
 			final FfmpegProgressMonitor monitor = new FfmpegProgressMonitor(f.progressFile, info.getNoFrames());
 			monitor.setCallback(new Runnable() {
@@ -234,7 +243,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 		
 	private class Format {
 		
-		public Format(int qualityDefinitionId, int h, int aBitrate, int vBitrate, int fr, java.io.File outputFile, java.io.File progressFile) {
+		public Format(int qualityDefinitionId, int h, int aBitrate, int vBitrate, double fr, java.io.File outputFile, java.io.File progressFile) {
 			this.qualityDefinitionId = qualityDefinitionId;
 			this.h = h;
 			this.aBitrate = aBitrate;
@@ -247,7 +256,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 		public int h;
 		public int aBitrate;
 		public int vBitrate;
-		public int fr;
+		public double fr; // the frame rate that the output file should be
 		public int qualityDefinitionId;
 		public int id;
 		public java.io.File outputFile;
