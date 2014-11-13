@@ -10,6 +10,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ExecutorService;
@@ -152,39 +153,7 @@ public class JobPoller {
 				}
 				s.close();
 				// delete actual files
-				for(File file : recordsToDelete) {
-					String sourceFilePath = FileHelper.getSourceFilePath(file.getId());
-					String sourcePendingFilePath = FileHelper.getSourcePendingFilePath(file.getId());
-					// presume if the file can't be found in the main folder it's in pending instead.
-					String actualSourceFilePath = Files.exists(Paths.get(sourceFilePath), LinkOption.NOFOLLOW_LINKS) ? sourceFilePath : sourcePendingFilePath;
-					
-					// delete file
-					try {
-						if (Files.exists(Paths.get(actualSourceFilePath), LinkOption.NOFOLLOW_LINKS)) {
-							FileUtils.forceDelete(new java.io.File(actualSourceFilePath));
-							logger.debug("Deleted file with id "+file.getId()+".");
-						}
-						else {
-							logger.debug("File with id "+file.getId()+" which is marked for deletion could not be deleted because it doesn't exist! Just removing record. This is possible if a file failed to copy accross after it's record was created.");
-						}
-					} catch (IOException e) {
-						logger.error("Error deleting file with id "+file.getId()+" which was pending deletion.");
-					}
-				}
-				
-				// now remove records from database
-				// TODO: probably a more efficient way of doing this
-				// tried doing WHERE IN with the ids in order but still was getting integrity constraint error. Maybe it doesn't necessarily process them in order specified in the IN section?
-				if (recordsToDelete.size() > 0) {
-					for (File f : recordsToDelete) {
-						s = dbConnection.prepareStatement("DELETE FROM files WHERE id=?");
-						s.setInt(1, f.getId());
-						if (s.executeUpdate() != 1) {
-							throw(new RuntimeException("Error occurred whilst deleting file record with id "+f.getId()+"."));
-						}
-					}
-				}
-				
+				removeFilesAndRecords(dbConnection, recordsToDelete);
 			} catch (SQLException e) {
 				logger.error("SQLException when trying to query databases for files that need deleting.");
 			}
@@ -208,12 +177,48 @@ public class JobPoller {
 			}
 			return fileTypeIdsWhere;
 		}
+		
+		private void removeFilesAndRecords(Connection dbConnection, List<File> recordsToDelete) throws SQLException {
+			// delete actual files
+			for(File file : recordsToDelete) {
+				String sourceFilePath = FileHelper.getSourceFilePath(file.getId());
+				String sourcePendingFilePath = FileHelper.getSourcePendingFilePath(file.getId());
+				// presume if the file can't be found in the main folder it's in pending instead.
+				String actualSourceFilePath = Files.exists(Paths.get(sourceFilePath), LinkOption.NOFOLLOW_LINKS) ? sourceFilePath : sourcePendingFilePath;
+				
+				// delete file
+				try {
+					if (Files.exists(Paths.get(actualSourceFilePath), LinkOption.NOFOLLOW_LINKS)) {
+						FileUtils.forceDelete(new java.io.File(actualSourceFilePath));
+						logger.debug("Deleted file with id "+file.getId()+".");
+					}
+					else {
+						logger.debug("File with id "+file.getId()+" could not be deleted because it doesn't exist! Just removing record. This is possible if a file failed to copy accross after it's record was created.");
+					}
+				} catch (IOException e) {
+					logger.error("Error deleting file with id "+file.getId()+".");
+				}
+			}
+			
+			// now remove records from database
+			// TODO: probably a more efficient way of doing this
+			// tried doing WHERE IN with the ids in order but still was getting integrity constraint error. Maybe it doesn't necessarily process them in order specified in the IN section?
+			if (recordsToDelete.size() > 0) {
+				for (File f : recordsToDelete) {
+					PreparedStatement s = dbConnection.prepareStatement("DELETE FROM files WHERE id=?");
+					s.setInt(1, f.getId());
+					if (s.executeUpdate() != 1) {
+						throw(new RuntimeException("Error occurred whilst deleting file record with id "+f.getId()+"."));
+					}
+				}
+			}
+		}
 	}
 	
 	private class TaskCompletionHandler implements CompletionHandlerI {
 		
 		/**
-		 * Called from a Task after it's complete just before it finishes.
+		 * Called from a Task after it's completed just before it finishes.
 		 * @param file
 		 */
 		public void markCompletion(File file) {
