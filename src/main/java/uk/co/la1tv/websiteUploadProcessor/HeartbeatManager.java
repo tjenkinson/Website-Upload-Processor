@@ -19,7 +19,7 @@ public class HeartbeatManager {
 	
 	private final Timer timer;
 	private final Config config;
-	private final HashSet<File> files;
+	private final HashSet<FileAndCounter> files;
 	private final long updateInterval;
 	private final Db db;
 	private final Object lock1 = new Object();
@@ -28,7 +28,7 @@ public class HeartbeatManager {
 		logger.info("Loading HeartbeatManager...");
 		config = Config.getInstance();
 		timer = new Timer(false);
-		files = new HashSet<File>();
+		files = new HashSet<FileAndCounter>();
 		updateInterval = config.getInt("general.heartbeatInterval")*1000;
 		db = DbHelper.getMainDb();
 		timer.schedule(new Task(), 0, updateInterval);
@@ -38,62 +38,94 @@ public class HeartbeatManager {
 	// register a file that is processing
 	// returns true if the file was successfully registered.
 	// could be false if the same file is registered at the same time from different servers. Only one will win.
+	// a file can be registered several times and must be unregistered the same amount of times.
 	public boolean registerFile(File file) {
-		logger.info("Registering file with id "+file.getId()+" with HeartbeatManager...");
-		Connection dbConnection = db.getConnection();
-		try {
-			dbConnection.prepareStatement("START TRANSACTION").executeUpdate();
-			PreparedStatement s = dbConnection.prepareStatement("SELECT heartbeat FROM files WHERE id=? FOR UPDATE");
-			s.setInt(1, file.getId());
-			ResultSet r = s.executeQuery();
-			if (!r.next()) {
-				logger.debug("Error trying to register file with id "+file.getId()+". It could not be found. Could have just been deleted.");
-				dbConnection.prepareStatement("COMMIT").executeUpdate();
-				s.close();
-				return false;
-			}
-			
-			// check that that the heartbeat hasn't been updates somewhere else
-			Timestamp lastHeartbeat = r.getTimestamp("heartbeat");
-			s.close();
-			if (lastHeartbeat != null && lastHeartbeat.getTime() >= getProcessingFilesTimestamp().getTime()) {
-				logger.debug("Could not register file with id "+file.getId()+" because it appears that it has been updated somewhere else.");
-				dbConnection.prepareStatement("COMMIT").executeUpdate();
-				return false;
-			}
-			
-			// set the timestamp
-			s = dbConnection.prepareStatement("UPDATE files SET heartbeat=? WHERE id=?");
-			Timestamp currentTimestamp = new Timestamp(System.currentTimeMillis());
-			s.setTimestamp(1, currentTimestamp);
-			s.setInt(2,  file.getId());
-			int result = s.executeUpdate();
-			s.close();
-			if (result != 1) {
-				dbConnection.prepareStatement("ROLLBACK").executeUpdate();
-				return false;
-			}
-			dbConnection.prepareStatement("COMMIT").executeUpdate();
-		} catch (SQLException e) {
-			try {
-				dbConnection.prepareStatement("ROLLBACK").executeUpdate();
-			} catch (SQLException e1) {
-				logger.debug("Transaction failed to be rolled back. This is possible if the reason is that the transaction failed to start in the first place.");
-			}
-			throw(new RuntimeException("Error trying to register a file with HeartbeatManager."));
-		}		
-		
 		synchronized(lock1) {
-			files.add(file);
+			for(FileAndCounter fileAndCounter: files) {
+				if (fileAndCounter.getFile() == file) {
+					// file already registered
+					// increment the counter instead.
+					fileAndCounter.register();
+					return true;
+				}
+			}
+			
+			logger.info("Registering file with id "+file.getId()+" with HeartbeatManager...");
+			Connection dbConnection = db.getConnection();
+			try {
+				dbConnection.prepareStatement("START TRANSACTION").executeUpdate();
+				PreparedStatement s = dbConnection.prepareStatement("SELECT heartbeat FROM files WHERE id=? FOR UPDATE");
+				s.setInt(1, file.getId());
+				ResultSet r = s.executeQuery();
+				if (!r.next()) {
+					logger.debug("Error trying to register file with id "+file.getId()+". It could not be found. Could have just been deleted.");
+					dbConnection.prepareStatement("COMMIT").executeUpdate();
+					s.close();
+					return false;
+				}
+				
+				// check that that the heartbeat hasn't been updates somewhere else
+				Timestamp lastHeartbeat = r.getTimestamp("heartbeat");
+				s.close();
+				if (lastHeartbeat != null && lastHeartbeat.getTime() >= getProcessingFilesTimestamp().getTime()) {
+					logger.debug("Could not register file with id "+file.getId()+" because it appears that it has been updated somewhere else.");
+					dbConnection.prepareStatement("COMMIT").executeUpdate();
+					return false;
+				}
+				
+				// set the timestamp
+				s = dbConnection.prepareStatement("UPDATE files SET heartbeat=? WHERE id=?");
+				Timestamp currentTimestamp = new Timestamp(System.currentTimeMillis());
+				s.setTimestamp(1, currentTimestamp);
+				s.setInt(2,  file.getId());
+				int result = s.executeUpdate();
+				s.close();
+				if (result != 1) {
+					dbConnection.prepareStatement("ROLLBACK").executeUpdate();
+					return false;
+				}
+				dbConnection.prepareStatement("COMMIT").executeUpdate();
+			} catch (SQLException e) {
+				try {
+					dbConnection.prepareStatement("ROLLBACK").executeUpdate();
+				} catch (SQLException e1) {
+					logger.debug("Transaction failed to be rolled back. This is possible if the reason is that the transaction failed to start in the first place.");
+				}
+				throw(new RuntimeException("Error trying to register a file with HeartbeatManager."));
+			}		
+
+			files.add(new FileAndCounter(file));
 		}
 		logger.info("Registered file with id "+file.getId()+" with HeartbeatManager.");
 		return true;
 	}
 	
+	// returns true of the file is currently registered with the heartbeat manager
+	public boolean isFileRegistered(File file) {
+		synchronized(lock1) {
+			for(FileAndCounter fileAndCounter: files) {
+				if (fileAndCounter.getFile() == file) {
+					return true;
+				}
+			}
+			return false;
+		}
+	}
+	
 	// un register a file that is no longer processing
+	// if this file has been registered several times this will do nothing until called the last time
 	public void unRegisterFile(File file) {
 		synchronized(lock1) {
-			files.remove(file);
+			for(FileAndCounter fileAndCounter : files) {
+				if (fileAndCounter.getFile() == file) {
+					if (fileAndCounter.unRegister()) {
+						// the counter has reached 0 so the file should be completely unregistered now
+						files.remove(fileAndCounter);
+					}
+					return;
+				}
+			}
+			throw(new RuntimeException("The file is not registered."));
 		}
 	}
 	
@@ -131,7 +163,8 @@ public class HeartbeatManager {
 					Timestamp currentTimestamp = new Timestamp(System.currentTimeMillis());
 					int paramNo = 1;
 					s.setTimestamp(paramNo++, currentTimestamp);
-					for (File file : files) {
+					for (FileAndCounter fileAndCounter : files) {
+						File file = fileAndCounter.getFile();
 						s.setInt(paramNo++, file.getId());
 					}
 					if (s.executeUpdate() != files.size()) {
@@ -146,5 +179,30 @@ public class HeartbeatManager {
 			logger.debug("Finished updating heartbeat timestamps.");
 		}
 		
+	}
+	
+	private class FileAndCounter {
+		private final File file;
+		private int counter = 1;
+
+		public FileAndCounter(File file) {
+			this.file = file;
+		}
+		
+		public void register() {
+			counter++;
+		}
+		
+		public boolean unRegister() {
+			counter--;
+			if (counter < 0) {
+				throw(new RuntimeException("The counter should never go below 0. Unregister has been called too many times."));
+			}
+			return counter == 0;
+		}
+		
+		public File getFile() {
+			return file;
+		}
 	}
 }
