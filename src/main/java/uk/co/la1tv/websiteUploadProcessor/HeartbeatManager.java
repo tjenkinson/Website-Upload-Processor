@@ -13,9 +13,12 @@ import org.apache.log4j.Logger;
 
 import uk.co.la1tv.websiteUploadProcessor.helpers.DbHelper;
 
+// TODO: make this singleton
 public class HeartbeatManager {
 	
 	private static Logger logger = Logger.getLogger(HeartbeatManager.class);
+	
+	private static HeartbeatManager instance = null;
 	
 	private final Timer timer;
 	private final Config config;
@@ -24,7 +27,7 @@ public class HeartbeatManager {
 	private final Db db;
 	private final Object lock1 = new Object();
 	
-	public HeartbeatManager() {
+	private HeartbeatManager() {
 		logger.info("Loading HeartbeatManager...");
 		config = Config.getInstance();
 		timer = new Timer(false);
@@ -35,18 +38,32 @@ public class HeartbeatManager {
 		logger.info("Loaded HeartbeatManager.");
 	}
 	
+	public static synchronized HeartbeatManager getInstance() {
+		if (instance == null) {
+			instance = new HeartbeatManager();
+		}
+		return instance;
+	}
+	
 	// register a file that is processing
 	// returns true if the file was successfully registered.
 	// could be false if the same file is registered at the same time from different servers. Only one will win.
-	// a file can be registered several times and must be unregistered the same amount of times.
+	// a file can be registered several times (as long future registrations are from the same thread) and must be unregistered the same amount of times.
 	public boolean registerFile(File file) {
 		synchronized(lock1) {
-			for(FileAndCounter fileAndCounter: files) {
+			for(FileAndCounter fileAndCounter : files) {
 				if (fileAndCounter.getFile() == file) {
 					// file already registered
-					// increment the counter instead.
-					fileAndCounter.register();
-					return true;
+					if (fileAndCounter.wasCreatedByCurrentThread()) {
+						// increment the counter instead.
+						fileAndCounter.register();
+						return true;
+					}
+					else {
+						// a different thread registered this file and is still using it so deny access.
+						logger.debug("Could not register file with id "+file.getId()+" because it is still registered with another thread.");
+						return false;
+					}
 				}
 			}
 			
@@ -184,16 +201,30 @@ public class HeartbeatManager {
 	private class FileAndCounter {
 		private final File file;
 		private int counter = 1;
+		// store the thread id that first got the lock
+		private final long threadId;
 
 		public FileAndCounter(File file) {
 			this.file = file;
+			this.threadId = Thread.currentThread().getId();
+		}
+		
+		// returns true if the thread calling this method matches the thread that created this object
+		public boolean wasCreatedByCurrentThread() {
+			return Thread.currentThread().getId() == threadId;
 		}
 		
 		public void register() {
+			if (!wasCreatedByCurrentThread()) {
+				throw(new RuntimeException("The lock for this file was obtained by a different thread. Only the thread that created this may reregister the lock."));
+			}
 			counter++;
 		}
 		
 		public boolean unRegister() {
+			if (!wasCreatedByCurrentThread()) {
+				throw(new RuntimeException("The lock for this file was obtained by a different thread. Only the thread that created this may unregister the lock."));
+			}
 			counter--;
 			if (counter < 0) {
 				throw(new RuntimeException("The counter should never go below 0. Unregister has been called too many times."));
