@@ -21,16 +21,17 @@ public class File {
 	
 	private int id;
 	private String name;
-	private double size;
+	private long size;
 	private FileTypeAbstract type;
 	
-	public File(int id, String name, double size, FileTypeAbstract type) {
+	public File(int id, String name, long size, FileTypeAbstract type) {
 	
 		this.id = id;
 		this.name = name;
 		this.size = size;
 		this.type = type;
-		logger.debug("Created File object for file of type '"+type.getClass().getSimpleName()+"' with id "+id+" and name '"+name+"'.");
+		String namePart = name != null ? " and name '"+name+"'" : "";
+		logger.debug("Created File object for file of type '"+type.getClass().getSimpleName()+"' with id "+id+namePart+".");
 	}
 	
 	@Override
@@ -51,7 +52,7 @@ public class File {
 		return name;
 	}
 	
-	public double getSize() {
+	public long getSize() {
 		return size;
 	}
 	
@@ -65,7 +66,7 @@ public class File {
 		return a.length > 1 ? a[a.length-1] : null;
 	}
 	
-	public void process() {
+	public void process(Connection dbConnection) {
 		
 		Config config = Config.getInstance();
 		// used to signify error if problem copying file from pending files locatioon to server (if working with copy) or if there was a problem moving the source fie from the pending directory to the main files directory.
@@ -76,7 +77,7 @@ public class File {
 		FileTypeProcessReturnInfo info = null;
 		
 		logger.info("Started processing file with id "+getId()+" and name '"+getName()+"'.");
-		DbHelper.updateStatus(getId(), "Started processing.", null);
+		DbHelper.updateStatus(dbConnection, getId(), "Started processing.", null);
 		
 		String fileWorkingDir = FileHelper.getFileWorkingDir(getId());
 		String sourceFilePath = FileHelper.getSourcePendingFilePath(getId());
@@ -109,7 +110,7 @@ public class File {
 		}
 		
 		if (!errorMovingSourceFile && !overQuota) {
-			info = type.process(new java.io.File(destinationSourceFilePath), new java.io.File(fileWorkingDir), this);
+			info = type.process(dbConnection, new java.io.File(destinationSourceFilePath), new java.io.File(fileWorkingDir), this);
 		}
 		
 		if (info == null) {
@@ -155,7 +156,6 @@ public class File {
 		
 		if (!errorMovingSourceFile) {
 			// update process_state in db and mark files as in_use
-			Connection dbConnection = DbHelper.getMainDb().getConnection();
 			logger.debug("Updating process_state in database...");
 			try {
 				logger.trace("Starting database transaction.");
@@ -169,7 +169,7 @@ public class File {
 				// check that ready_for_delete is still 0.
 				else {
 					if (r.getInt("ready_for_delete") == 1) {
-						logger.debug("The file with id "+getId()+" has been processed but during this time it has been marked for deletion. Updating process_state anyway.");
+						logger.debug("The file with id "+getId()+" has been processed but during this time it has been marked for deletion.");
 					}
 					
 					
@@ -204,7 +204,7 @@ public class File {
 					}
 					
 					// update process_state and set error message
-					DbHelper.updateStatus(getId(), !info.success ? info.msg : "", null);
+					DbHelper.updateStatus(dbConnection, getId(), !info.success ? info.msg : "", null);
 					PreparedStatement s2 = dbConnection.prepareStatement("UPDATE files SET process_state=? WHERE id=?");
 					s2.setInt(1, info.success ? 1 : 2); // a value of 1 represents success, 2 represents failure
 					s2.setInt(2, getId());

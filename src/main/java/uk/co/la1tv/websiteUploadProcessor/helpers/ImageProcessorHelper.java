@@ -51,17 +51,18 @@ public class ImageProcessorHelper {
 	
 	/**
 	 * Processes the source image to all of the formats in the formats array and copies the files across to the web app. Also updates the process status in the database. 
-	 * @param outputFileType 
+	 * @param dbConnection: A Connection object providing a connection to the database.
 	 * @param returnVal: The FileTypeProcessReturnInfo object which will eventually be returned to process() in File.
 	 * @param source: The source file.
 	 * @param workingDir: The working directory.
 	 * @param formats: The formats array that the source file will get processed into.
 	 * @param inputFormat: The Image Magick format of the input file.
 	 * @param outputFormat: The image Magick format of the output file.
+	 * @param outputFileType: The file type that the output file will be.
 	 * @param file: The File object associated with the input file.
 	 * @return True if the processing is successful or false if it failed.
 	 */
-	public static boolean process(FileTypeProcessReturnInfo returnVal, java.io.File source, java.io.File workingDir, List<ImageFormat> formats, ImageMagickFormat inputFormat, ImageMagickFormat outputFormat, File file, FileType outputFileType) {
+	public static boolean process(Connection dbConnection, FileTypeProcessReturnInfo returnVal, java.io.File source, java.io.File workingDir, List<ImageFormat> formats, ImageMagickFormat inputFormat, ImageMagickFormat outputFormat, File file, FileType outputFileType) {
 		
 		BigInteger totalSize = BigInteger.ZERO;
 		
@@ -80,8 +81,7 @@ public class ImageProcessorHelper {
 			}
 		}
 
-		DbHelper.updateStatus(file.getId(), "Finalizing.", null);
-		Connection dbConnection = DbHelper.getMainDb().getConnection();
+		DbHelper.updateStatus(dbConnection, file.getId(), "Finalizing.", null);
 		ArrayList<OutputFile> outputFiles = new ArrayList<OutputFile>();
 		
 		try {

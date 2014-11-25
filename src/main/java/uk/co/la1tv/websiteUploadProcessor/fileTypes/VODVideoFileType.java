@@ -15,6 +15,7 @@ import org.apache.log4j.Logger;
 
 import uk.co.la1tv.websiteUploadProcessor.Config;
 import uk.co.la1tv.websiteUploadProcessor.File;
+import uk.co.la1tv.websiteUploadProcessor.HeartbeatManager;
 import uk.co.la1tv.websiteUploadProcessor.helpers.DbHelper;
 import uk.co.la1tv.websiteUploadProcessor.helpers.FfmpegFileInfo;
 import uk.co.la1tv.websiteUploadProcessor.helpers.FfmpegHelper;
@@ -31,7 +32,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 	private static Logger logger = Logger.getLogger(VODVideoFileType.class);
 
 	@Override
-	public FileTypeProcessReturnInfo process(java.io.File source, java.io.File workingDir, final File file) {
+	public FileTypeProcessReturnInfo process(final Connection dbConnection, java.io.File source, java.io.File workingDir, final File file) {
 		Config config = Config.getInstance();
 		int exitVal;
 		FileTypeProcessReturnInfo returnVal = new FileTypeProcessReturnInfo();
@@ -40,7 +41,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 		FfmpegFileInfo info;
 		BigInteger totalSize = BigInteger.ZERO;
 		
-		DbHelper.updateStatus(file.getId(), "Checking video format.", null);
+		DbHelper.updateStatus(dbConnection, file.getId(), "Checking video format.", null);
 		// get source file information.
 		info = FfmpegHelper.getFileInfo(source, workingDir);
 		if (info == null) {
@@ -101,10 +102,8 @@ public class VODVideoFileType extends FileTypeAbstract {
 		
 		ArrayList<OutputFile> outputFiles = new ArrayList<OutputFile>();
 		
-		Connection dbConnection = DbHelper.getMainDb().getConnection();
-		
 		final String renderRequiredFormatsMsg = "Rendering video into required formats.";
-		DbHelper.updateStatus(file.getId(), renderRequiredFormatsMsg, 0);
+		DbHelper.updateStatus(dbConnection, file.getId(), renderRequiredFormatsMsg, 0);
 		
 		// loop through different formats and render videos for ones that are applicable
 		for (final Format f : formatsToRender) {
@@ -136,7 +135,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 					// called whenever the process percentage changes
 					// calculate the actual percentage when taking all renders into account
 					int actualPercentage = (int) Math.floor(((float) monitor.getPercentage()/formatsToRender.size()) + (formatsToRender.indexOf(f)*(100.0/formatsToRender.size())));
-					DbHelper.updateStatus(file.getId(), renderRequiredFormatsMsg, actualPercentage);
+					DbHelper.updateStatus(dbConnection, file.getId(), renderRequiredFormatsMsg, actualPercentage);
 				}
 			});
 			exitVal = RuntimeHelper.executeProgram(new String[] {config.getString("ffmpeg.location"), "-y", "-nostdin", "-timelimit", ""+config.getInt("ffmpeg.videoEncodeTimeLimit"), "-progress", ""+f.progressFile.getAbsolutePath(), "-i", source.getAbsolutePath(), "-vf", "scale=trunc(("+f.h+"*a)/2)*2:"+f.h, "-strict", "experimental", "-acodec", "aac", "-b:a", f.aBitrate+"k", "-ac", "2", "-ar", "48000", "-vcodec", "libx264", "-vprofile", "main", "-g", "48", "-b:v", f.vBitrate+"k", "-maxrate", f.vBitrate+"k", "-bufsize", f.vBitrate*2+"k", "-preset", "medium", "-crf", "16", "-vsync", "vfr", "-af", "aresample=async=1000", "-movflags", "+faststart", "-r", f.fr+"", "-f", "mp4", f.outputFile.getAbsolutePath()}, workingDir, null, null);
@@ -163,7 +162,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 		// create entries in Files with in_use set to 0
 		// and copy files across to web app
 
-		DbHelper.updateStatus(file.getId(), "Finalizing renders.", null);
+		DbHelper.updateStatus(dbConnection, file.getId(), "Finalizing renders.", null);
 		try {
 			for (Format f : formatsToRender) {
 				
@@ -172,21 +171,29 @@ public class VODVideoFileType extends FileTypeAbstract {
 				logger.debug("Creating file record for render with height "+f.h+" belonging to source file with id "+file.getId()+".");
 
 				Timestamp currentTimestamp = new Timestamp(System.currentTimeMillis());
-				PreparedStatement s = dbConnection.prepareStatement("INSERT INTO files (in_use,created_at,updated_at,size,file_type_id,source_file_id,process_state) VALUES(0,?,?,?,?,?,1)", Statement.RETURN_GENERATED_KEYS);
+				PreparedStatement s = dbConnection.prepareStatement("INSERT INTO files (in_use,created_at,updated_at,size,file_type_id,source_file_id,heartbeat,process_state) VALUES(0,?,?,?,?,?,?,1)", Statement.RETURN_GENERATED_KEYS);
 				s.setTimestamp(1, currentTimestamp);
 				s.setTimestamp(2, currentTimestamp);
 				s.setLong(3, size);
 				s.setInt(4, FileType.VOD_VIDEO_RENDER.getObj().getId());
 				s.setInt(5, file.getId());
+				// so that nothing else will pick up this file and it can be registered with the heartbeat manager immediately
+				s.setTimestamp(6, currentTimestamp);
 				if (s.executeUpdate() != 1) {
 					s.close();
 					logger.warn("Error occurred when creating database entry for a file.");
 					return returnVal;
 				}
+				
 				ResultSet generatedKeys = s.getGeneratedKeys();
 				generatedKeys.next();
-				f.id = generatedKeys.getInt(1);
+				int id = generatedKeys.getInt(1);
 				s.close();
+				f.id = id;
+				// register new file with the heartbeat manager
+				File newFile = new File(id, null, size, FileType.VOD_VIDEO_RENDER.getObj());
+				// TODO: these need to be unregistered if fails
+				HeartbeatManager.getInstance().registerFile(newFile);
 				logger.debug("File record created with id "+f.id+" for render with height "+f.h+" belonging to source file with id "+file.getId()+".");
 				
 				// add to set of files to mark in_use when processing completed

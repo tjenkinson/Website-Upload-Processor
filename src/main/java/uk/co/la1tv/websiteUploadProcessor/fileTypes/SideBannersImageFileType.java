@@ -1,5 +1,6 @@
 package uk.co.la1tv.websiteUploadProcessor.fileTypes;
 
+import java.sql.Connection;
 import java.util.HashSet;
 import java.util.List;
 
@@ -23,13 +24,13 @@ public class SideBannersImageFileType extends FileTypeAbstract {
 	private static Logger logger = Logger.getLogger(SideBannersImageFileType.class);
 
 	@Override
-	public FileTypeProcessReturnInfo process(java.io.File source, java.io.File workingDir, File file) {
+	public FileTypeProcessReturnInfo process(final Connection dbConnection, java.io.File source, java.io.File workingDir, File file) {
 		Config config = Config.getInstance();
 		FileTypeProcessReturnInfo returnVal = new FileTypeProcessReturnInfo();
 		// ids of files that should be marked in_use when the process_state is updated at the end of processing
 		returnVal.fileIdsToMarkInUse = new HashSet<Integer>();
 		
-		DbHelper.updateStatus(file.getId(), "Processing image.", null);
+		DbHelper.updateStatus(dbConnection, file.getId(), "Processing image.", null);
 		
 		ImageMagickFormat inputFormat = ImageMagickFormat.getFormatFromExtension(file.getExtension());
 		if (inputFormat == null) {
@@ -40,7 +41,7 @@ public class SideBannersImageFileType extends FileTypeAbstract {
 		
 		final List<ImageFormat> formats = ImageProcessorHelper.getFormats(config.getList("encoding.sideBannerImageFormats"), workingDir);
 	
-		returnVal.success = ImageProcessorHelper.process(returnVal, source, workingDir, formats, inputFormat, ImageMagickFormat.JPG, file, FileType.SIDE_BANNER_IMAGES_RENDER);
+		returnVal.success = ImageProcessorHelper.process(dbConnection, returnVal, source, workingDir, formats, inputFormat, ImageMagickFormat.JPG, file, FileType.SIDE_BANNER_IMAGES_RENDER);
 		return returnVal;
 	}
 	

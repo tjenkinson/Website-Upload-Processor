@@ -3,7 +3,6 @@ package uk.co.la1tv.websiteUploadProcessor;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
-
 import org.apache.log4j.Logger;
 
 public class Db {
@@ -14,8 +13,6 @@ public class Db {
 	private String database;
 	private String username;
 	private String password;
-	
-	private Connection connection = null;
 	
 	public Db(String host, String database, String username, String password) {
 		this.host = host;
@@ -28,20 +25,16 @@ public class Db {
 		} catch (ClassNotFoundException e) {
 			throw(new RuntimeException("Could not load database driver."));
 		}
-		
-		connect();
 	}
 	
+	
 	/**
-	 * Connects to the database if not already connected.
+	 * Get a new mysql connection.
+	 * @return the Connection or null if a connection could not be made for some reason
 	 */
-	public void connect() {
+	public Connection getConnection() {
+		Connection connection = null;
 		logger.info("Connecting to database.");
-		if (connection != null) {
-			logger.info("Already connected.");
-			return;
-		}
-		
 		Config config = Config.getInstance();
 		for(int i=0; i<config.getInt("db.noConnectionRetries") && connection == null; i++) {
 			if (i > 0) {
@@ -49,7 +42,9 @@ public class Db {
 				try {
 					Thread.sleep(config.getInt("db.connectionRetryInterval")*1000);
 				} catch (InterruptedException e) {
-					throw(new RuntimeException("Thread was interruped whilst sleeping to retry database connection. This shouldn't happen!"));
+					logger.info("Thread interrupted whilst trying to connect to database.");
+					Thread.currentThread().interrupt();
+					break;
 				}
 			}
 			try {
@@ -57,34 +52,11 @@ public class Db {
 			} catch (SQLException e) {}
 		}
 		if (connection == null) {
-			throw(new RuntimeException("Could not connect to database."));
+			logger.warn("Could not connect to the database for some reason.");
 		}
-		logger.info("Connected to database.");
-	}
-	
-	/**
-	 * Disconnects from the database if connected.
-	 */
-	public void disconnect() {
-		logger.info("Disconnecting from database.");
-		if (connection == null) {
-			logger.info("Already disconnected.");
-			return;
+		else {
+			logger.info("Connected to database.");
 		}
-		try {
-			connection.close();
-		} catch (SQLException e) {
-			throw(new RuntimeException("Error closing database connection."));
-		}
-		connection = null;
-		logger.info("Disconnected from database.");
-	}
-	
-	/**
-	 * Get the Connection object associated with this Db object.
-	 * @return the Connection
-	 */
-	public Connection getConnection() {
 		return connection;
 	}
 }

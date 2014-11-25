@@ -47,7 +47,7 @@ public class JobPoller {
 		config = Config.getInstance();
 		threadPool = Executors.newFixedThreadPool(config.getInt("general.noThreads"));
 		taskCompletionHandler = new TaskCompletionHandler();
-		heartbeatManager = new HeartbeatManager();
+		heartbeatManager = HeartbeatManager.getInstance();
 		timer = new Timer(false);
 		timer.schedule(new PollTask(), 0, config.getInt("general.pollInterval")*1000);
 		logger.info("Job poller loaded.");
@@ -55,7 +55,11 @@ public class JobPoller {
 	
 	private class PollTask extends TimerTask {
 		
-		private Db db = DbHelper.getMainDb();
+		private final Connection dbConnection;
+		
+		public PollTask() {
+			dbConnection = DbHelper.getMainDb().getConnection();
+		}
 		
 		@Override
 		public void run() {
@@ -70,7 +74,6 @@ public class JobPoller {
 		private void processFiles() {
 			logger.info("Polling for files that need processing...");
 			try {
-				Connection dbConnection = db.getConnection();
 				PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE ready_for_processing=1 AND process_state=0 AND ready_for_delete=0 AND (session_id IS NOT NULL OR in_use=1) AND (heartbeat IS NULL OR heartbeat<?)"+getFileTypeIdsWhereString("file_type_id")+" ORDER BY updated_at DESC");
 				int i = 1;
 				s.setTimestamp(i++, heartbeatManager.getProcessingFilesTimestamp());
@@ -96,7 +99,7 @@ public class JobPoller {
 						continue;
 					}
 					
-					DbHelper.updateStatus(file.getId(), "Added to process queue.", null);
+					DbHelper.updateStatus(dbConnection, file.getId(), "Added to process queue.", null);
 					filesInProgress.add(file);
 					threadPool.execute(new Job(taskCompletionHandler, file));
 					logger.info("Created and scheduled process job for file with id "+r.getInt("id")+".");
@@ -114,7 +117,6 @@ public class JobPoller {
 			
 			logger.info("Polling for files pending deletion...");
 			try {
-				Connection dbConnection = db.getConnection();
 				PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE ready_for_processing=1 AND ((heartbeat IS NULL OR heartbeat<?) AND (ready_for_delete=1 OR (in_use=0 AND session_id IS NULL)))"+getFileTypeIdsWhereString("file_type_id"));
 				int i = 1;
 				s.setTimestamp(i++, heartbeatManager.getProcessingFilesTimestamp());
@@ -177,7 +179,6 @@ public class JobPoller {
 			boolean allFilesDeletedSuccesfully = true;
 			
 			// delete actual files
-			Connection dbConnection = db.getConnection();
 			
 			{
 				if (removeSourceFile) {

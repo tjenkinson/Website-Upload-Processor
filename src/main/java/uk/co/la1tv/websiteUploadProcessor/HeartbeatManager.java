@@ -24,7 +24,6 @@ public class HeartbeatManager {
 	private final Config config;
 	private final HashSet<FileAndCounter> files;
 	private final long updateInterval;
-	private final Db db;
 	private final Object lock1 = new Object();
 	
 	private HeartbeatManager() {
@@ -33,7 +32,6 @@ public class HeartbeatManager {
 		timer = new Timer(false);
 		files = new HashSet<FileAndCounter>();
 		updateInterval = config.getInt("general.heartbeatInterval")*1000;
-		db = DbHelper.getMainDb();
 		timer.schedule(new Task(), 0, updateInterval);
 		logger.info("Loaded HeartbeatManager.");
 	}
@@ -68,7 +66,8 @@ public class HeartbeatManager {
 			}
 			
 			logger.info("Registering file with id "+file.getId()+" with HeartbeatManager...");
-			Connection dbConnection = db.getConnection();
+			// get a new connection to the database. Important because transactions are used and other java threads should not end up using the same connection.
+			Connection dbConnection = DbHelper.getMainDb().getConnection();
 			try {
 				dbConnection.prepareStatement("START TRANSACTION").executeUpdate();
 				PreparedStatement s = dbConnection.prepareStatement("SELECT heartbeat FROM files WHERE id=? FOR UPDATE");
@@ -78,6 +77,7 @@ public class HeartbeatManager {
 					logger.debug("Error trying to register file with id "+file.getId()+". It could not be found. Could have just been deleted.");
 					dbConnection.prepareStatement("COMMIT").executeUpdate();
 					s.close();
+					dbConnection.close();
 					return false;
 				}
 				
@@ -87,6 +87,7 @@ public class HeartbeatManager {
 				if (lastHeartbeat != null && lastHeartbeat.getTime() >= getProcessingFilesTimestamp().getTime()) {
 					logger.debug("Could not register file with id "+file.getId()+" because it appears that it has been updated somewhere else.");
 					dbConnection.prepareStatement("COMMIT").executeUpdate();
+					dbConnection.close();
 					return false;
 				}
 				
@@ -99,12 +100,15 @@ public class HeartbeatManager {
 				s.close();
 				if (result != 1) {
 					dbConnection.prepareStatement("ROLLBACK").executeUpdate();
+					dbConnection.close();
 					return false;
 				}
 				dbConnection.prepareStatement("COMMIT").executeUpdate();
+				dbConnection.close();
 			} catch (SQLException e) {
 				try {
 					dbConnection.prepareStatement("ROLLBACK").executeUpdate();
+					dbConnection.close();
 				} catch (SQLException e1) {
 					logger.debug("Transaction failed to be rolled back. This is possible if the reason is that the transaction failed to start in the first place.");
 				}
@@ -153,7 +157,13 @@ public class HeartbeatManager {
 	}
 	
 	private class Task extends TimerTask {
-
+		
+		private Connection dbConnection;
+		
+		public Task() {
+			dbConnection = DbHelper.getMainDb().getConnection();
+		}
+		
 		@Override
 		public synchronized void run() {
 			logger.debug("Updating heartbeat timestamps...");
@@ -161,8 +171,6 @@ public class HeartbeatManager {
 				logger.debug("No files processing that need timestamps updating.");
 				return;
 			}
-			
-			Connection dbConnection = db.getConnection();
 			
 			synchronized(lock1) {
 				String fileIdsWhere = "";
