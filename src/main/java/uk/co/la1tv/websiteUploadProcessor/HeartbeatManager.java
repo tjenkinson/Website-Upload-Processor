@@ -44,10 +44,17 @@ public class HeartbeatManager {
 	}
 	
 	// register a file that is processing
-	// returns true if the file was successfully registered.
-	// could be false if the same file is registered at the same time from different servers. Only one will win.
-	// a file can be registered several times (as long future registrations are from the same thread) and must be unregistered the same amount of times.
+		// returns true if the file was successfully registered.
+		// could be false if the same file is registered at the same time from different servers. Only one will win.
+		// a file can be registered several times (as long future registrations are from the same thread) and must be unregistered the same amount of times.
 	public boolean registerFile(File file) {
+		return registerFile(file, false);
+	}
+	
+	// if bypassCheck is true this file will always be registered. There will be no check to see if the file is registered somewhere else.
+	// if a file record is created on this server then it should be created with the heartbeat set to the current timestamp so no other servers can pick it up right from creation
+	// in this case bypassCheck must be true to actually get it registered so the timestamp is kept updated.
+	public boolean registerFile(File file, boolean bypassCheck) {
 		synchronized(lock1) {
 			for(FileAndCounter fileAndCounter : files) {
 				if (fileAndCounter.getFile() == file) {
@@ -67,8 +74,6 @@ public class HeartbeatManager {
 			
 			logger.info("Registering file with id "+file.getId()+" with HeartbeatManager...");
 			// get a new connection to the database. Important because transactions are used and other java threads should not end up using the same connection.
-			
-			
 			Connection dbConnection = DbHelper.getMainDb().getConnection();
 			try {
 				dbConnection.prepareStatement("START TRANSACTION").executeUpdate();
@@ -103,7 +108,7 @@ public class HeartbeatManager {
 				long lastHeartbeatTime = lastHeartbeat.getTime() + timeTakenToGetResponse;
 				s.close();
 				// check that that the heartbeat hasn't been updates somewhere else
-				if (lastHeartbeat != null && lastHeartbeatTime >= getProcessingFilesTimestamp().getTime()) {
+				if (!bypassCheck && lastHeartbeat != null && lastHeartbeatTime >= getProcessingFilesTimestamp().getTime()) {
 					logger.debug("Could not register file with id "+file.getId()+" because it appears that it has been updated somewhere else.");
 					dbConnection.prepareStatement("COMMIT").executeUpdate();
 					dbConnection.close();
@@ -131,9 +136,6 @@ public class HeartbeatManager {
 				} catch (SQLException e1) {
 					logger.debug("Transaction failed to be rolled back. This is possible if the reason is that the transaction failed to start in the first place.");
 				}
-				
-				// TODO: the exception could be due to a lock timeout. need to kill any threads that think they have the lock
-				
 				throw(new RuntimeException("Error trying to register a file with HeartbeatManager."));
 			}		
 
@@ -168,7 +170,21 @@ public class HeartbeatManager {
 					return;
 				}
 			}
-			throw(new RuntimeException("The file is not registered."));
+			// the file is not registered. may have been forcibly unregistered though so don't throw an exception, just ignore it.
+		}
+	}
+	
+	// if the heartbeat manager can no longer guarantee it has the file registered it will unregister it.
+	// the main program code should use isFileRegistered to check if the file is still registered before performing tasks which require exclusivity (probably whilst in a database transaction with an exclusive lock)
+	private void forciblyUnregisterFile(File file) {
+		synchronized(lock1) {
+			for(FileAndCounter fileAndCounter : files) {
+				if (fileAndCounter.getFile() == file) {
+					files.remove(fileAndCounter);
+					logger.warn("Forcibly unregistered file with id "+file.getId()+" as can no longer guarentee exclusive access for some reason.");
+					return;
+				}
+			}
 		}
 	}
 	
@@ -195,53 +211,50 @@ public class HeartbeatManager {
 			}
 			
 			synchronized(lock1) {
-				String fileIdsWhere = "";
-				fileIdsWhere = "(";
-				for (int i=0; i<files.size(); i++) {
-					if (i > 0) {
-						fileIdsWhere += ",";
-					}
-					fileIdsWhere += "?";
-				}
-				fileIdsWhere += ")";
 				
-				try {
-					dbConnection.prepareStatement("START TRANSACTION").executeUpdate();
-					// first get an exclusive lock on all the records that the timestamps need updating on
-					PreparedStatement s = dbConnection.prepareStatement("SELECT heartbeat FROM files WHERE id IN "+fileIdsWhere+" FOR UPDATE");
-					int paramNo = 1;
-					for (FileAndCounter fileAndCounter : files) {
-						File file = fileAndCounter.getFile();
-						s.setInt(paramNo++, file.getId());
-					}
-					s.executeQuery();
-					
-					// now that we have an exclusive lock we can be confident that this query will execute pretty instantly and therefore the time will be accurate.
-					// if we didn't get the lock above then this update command would need to get an exclusive lock, which could take some time, meaning then when it gets the lock the time that would be written would be old
-					// whenever a server tries to register a file they first request an exclusive lock on the record.
-					// provided that all requests to the mysql server with exclusive locks are handled in the order that the locks were requested, there should be no issues
-					Timestamp currentTimestamp = new Timestamp(System.currentTimeMillis());
-					s = dbConnection.prepareStatement("UPDATE files SET heartbeat=? WHERE id IN "+fileIdsWhere);
-					paramNo = 1;
-					s.setTimestamp(paramNo++, currentTimestamp);
-					for (FileAndCounter fileAndCounter : files) {
-						File file = fileAndCounter.getFile();
-						s.setInt(paramNo++, file.getId());
-					}
-					if (s.executeUpdate() != files.size()) {
-						logger.warn("Error occurred when updating heartbeat timestamps. Some may not have been updated.");
-					}
-					dbConnection.prepareStatement("COMMIT").executeUpdate();
-					
-					s.close();
+				for (FileAndCounter fileAndCounter : files) {
+					File file = fileAndCounter.getFile();
 				
-				} catch (SQLException e) {
 					try {
-						dbConnection.prepareStatement("ROLLBACK").executeUpdate();
-					} catch (SQLException e1) {
-						logger.debug("Transaction for updating heartbeat timestamps failed to be rolled back. This is possible if the reason is that the transaction failed to start in the first place.");
+						dbConnection.prepareStatement("START TRANSACTION").executeUpdate();
+						// first get an exclusive lock on the file record
+						PreparedStatement s = dbConnection.prepareStatement("SELECT heartbeat FROM files WHERE id=? FOR UPDATE");
+						s.setInt(1, file.getId());
+						s.executeQuery();
+						
+						// now that we have an exclusive lock we can be confident that this query will execute pretty instantly and therefore the time will be accurate.
+						// if we didn't get the lock above then this update command would need to get an exclusive lock, which could take some time, meaning then when it gets the lock the time that would be written would be old
+						// whenever a server tries to register a file they first request an exclusive lock on the record.
+						// provided that all requests to the mysql server with exclusive locks are handled in the order that the locks were requested, there should be no issues
+						Timestamp currentTimestamp = new Timestamp(System.currentTimeMillis());
+						s = dbConnection.prepareStatement("UPDATE files SET heartbeat=? WHERE id=?");
+						s.setTimestamp(1, currentTimestamp);
+						s.setInt(2, file.getId());
+						if (s.executeUpdate() != 1) {
+							logger.error("Error occurred when updating heartbeat timestamp for file with id "+file.getId()+".");
+							dbConnection.prepareStatement("ROLLBACK").executeUpdate();
+							// can no longer guarantee this file is registered with this server so unregister it
+							forciblyUnregisterFile(file);
+						}
+						else {
+							dbConnection.prepareStatement("COMMIT").executeUpdate();
+							logger.debug("Updated heartbeat timestamp for file with id "+file.getId()+".");
+						}
+						s.close();
+					
+					} catch (SQLException e) {
+						logger.error("SQLException occurred when updating heartbeat timestamp for file with id "+file.getId()+".");
+						e.printStackTrace();
+						try {
+							dbConnection.prepareStatement("ROLLBACK").executeUpdate();
+						} catch (SQLException e1) {
+							logger.debug("Transaction for updating heartbeat timestamps failed to be rolled back. This is possible if the reason is that the transaction failed to start in the first place.");
+						}
+						
+						// can no longer guarantee this file is registered with this server so unregister it
+						forciblyUnregisterFile(file);
+						
 					}
-					throw(new RuntimeException("Error trying to update files with HeartbeatManager."));
 				}
 			}
 			logger.debug("Finished updating heartbeat timestamps.");

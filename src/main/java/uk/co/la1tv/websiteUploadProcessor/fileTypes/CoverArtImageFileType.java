@@ -1,7 +1,6 @@
 package uk.co.la1tv.websiteUploadProcessor.fileTypes;
 
 import java.sql.Connection;
-import java.util.HashSet;
 import java.util.List;
 
 import org.apache.log4j.Logger;
@@ -26,8 +25,6 @@ public class CoverArtImageFileType extends FileTypeAbstract {
 		// any image format and size is acceptable. It will always be cropped to become correct aspect ratio
 		Config config = Config.getInstance();
 		FileTypeProcessReturnInfo returnVal = new FileTypeProcessReturnInfo();
-		// ids of files that should be marked in_use when the process_state is updated at the end of processing
-		returnVal.fileIdsToMarkInUse = new HashSet<Integer>();
 		
 		DbHelper.updateStatus(dbConnection, file.getId(), "Processing image.", null);
 		

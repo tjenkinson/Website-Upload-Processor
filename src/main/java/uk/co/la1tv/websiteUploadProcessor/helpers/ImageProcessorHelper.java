@@ -92,12 +92,14 @@ public class ImageProcessorHelper {
 				logger.debug("Creating file record for render with height "+f.h+" belonging to source file with id "+file.getId()+".");
 
 				Timestamp currentTimestamp = new Timestamp(System.currentTimeMillis());
-				PreparedStatement s = dbConnection.prepareStatement("INSERT INTO files (in_use,created_at,updated_at,size,file_type_id,source_file_id,process_state) VALUES(0,?,?,?,?,?,1)", Statement.RETURN_GENERATED_KEYS);
+				PreparedStatement s = dbConnection.prepareStatement("INSERT INTO files (in_use,created_at,updated_at,size,file_type_id,source_file_id,heartbeat,process_state) VALUES(0,?,?,?,?,?,?,1)", Statement.RETURN_GENERATED_KEYS);
 				s.setTimestamp(1, currentTimestamp);
 				s.setTimestamp(2, currentTimestamp);
 				s.setLong(3, size);
 				s.setInt(4, outputFileType.getObj().getId());
 				s.setInt(5, file.getId());
+				// so that nothing else will pick up this file and it can be registered with the heartbeat manager immediately
+				s.setTimestamp(6, currentTimestamp);
 				if (s.executeUpdate() != 1) {
 					s.close();
 					logger.warn("Error occurred when creating database entry for a file.");
@@ -105,31 +107,37 @@ public class ImageProcessorHelper {
 				}
 				ResultSet generatedKeys = s.getGeneratedKeys();
 				generatedKeys.next();
-				f.id = generatedKeys.getInt(1);
+				int id = generatedKeys.getInt(1);
 				s.close();
-				logger.debug("File record created with id "+f.id+" for image render with width "+f.w+" and height "+f.h+" belonging to source file with id "+file.getId()+".");
+				
+				File newFile = new File(id, null, size, outputFileType.getObj());
+				
+				logger.debug("File record created with id "+id+" for image render with width "+f.w+" and height "+f.h+" belonging to source file with id "+file.getId()+".");
 				
 				// add to set of files to mark in_use when processing completed
-				returnVal.fileIdsToMarkInUse.add(f.id);
+				if (!returnVal.registerNewFile(newFile)) {
+					// error occurred. abort
+					logger.warn("Error trying to register newly created file.");
+					return false;
+				}
 				
 				// add entry to OutputFiles array which will be used to populate VideoFiles table later
 				// get width and height of output
-				
 				ImageMagickFileInfo info = ImageMagickHelper.getFileInfo(inputFormat, f.outputFile, workingDir);
 				if (info == null) {
 					logger.warn("Error retrieving info for file rendered from source file with id "+file.getId()+".");
 					return false;
 				}
 				
-				outputFiles.add(new OutputFile(f.id, info.getW(), info.getH()));
+				outputFiles.add(new OutputFile(id, info.getW(), info.getH()));
 				
 				// copy file to server
-				logger.info("Moving output file with id "+f.id+" to web app...");
-				if (!FileHelper.moveToWebApp(f.outputFile, f.id)) {
-					logger.error("Error trying to move output file with id "+f.id+" to web app.");
+				logger.info("Moving output file with id "+id+" to web app...");
+				if (!FileHelper.moveToWebApp(f.outputFile, id)) {
+					logger.error("Error trying to move output file with id "+id+" to web app.");
 					return false;
 				}
-				logger.info("Output file with id "+f.id+" moved to web app.");
+				logger.info("Output file with id "+id+" moved to web app.");
 			}
 		} catch (SQLException e) {
 			throw(new RuntimeException("Error trying to register files in database."));

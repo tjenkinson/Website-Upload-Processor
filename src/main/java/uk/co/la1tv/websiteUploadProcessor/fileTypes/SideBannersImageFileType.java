@@ -1,7 +1,6 @@
 package uk.co.la1tv.websiteUploadProcessor.fileTypes;
 
 import java.sql.Connection;
-import java.util.HashSet;
 import java.util.List;
 
 import org.apache.log4j.Logger;
@@ -10,9 +9,7 @@ import uk.co.la1tv.websiteUploadProcessor.Config;
 import uk.co.la1tv.websiteUploadProcessor.File;
 import uk.co.la1tv.websiteUploadProcessor.helpers.DbHelper;
 import uk.co.la1tv.websiteUploadProcessor.helpers.ImageFormat;
-import uk.co.la1tv.websiteUploadProcessor.helpers.ImageMagickFileInfo;
 import uk.co.la1tv.websiteUploadProcessor.helpers.ImageMagickFormat;
-import uk.co.la1tv.websiteUploadProcessor.helpers.ImageMagickHelper;
 import uk.co.la1tv.websiteUploadProcessor.helpers.ImageProcessorHelper;
 
 public class SideBannersImageFileType extends FileTypeAbstract {
@@ -28,7 +25,6 @@ public class SideBannersImageFileType extends FileTypeAbstract {
 		Config config = Config.getInstance();
 		FileTypeProcessReturnInfo returnVal = new FileTypeProcessReturnInfo();
 		// ids of files that should be marked in_use when the process_state is updated at the end of processing
-		returnVal.fileIdsToMarkInUse = new HashSet<Integer>();
 		
 		DbHelper.updateStatus(dbConnection, file.getId(), "Processing image.", null);
 		

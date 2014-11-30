@@ -8,14 +8,12 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 
 import org.apache.log4j.Logger;
 
 import uk.co.la1tv.websiteUploadProcessor.Config;
 import uk.co.la1tv.websiteUploadProcessor.File;
-import uk.co.la1tv.websiteUploadProcessor.HeartbeatManager;
 import uk.co.la1tv.websiteUploadProcessor.helpers.DbHelper;
 import uk.co.la1tv.websiteUploadProcessor.helpers.FfmpegFileInfo;
 import uk.co.la1tv.websiteUploadProcessor.helpers.FfmpegHelper;
@@ -36,8 +34,6 @@ public class VODVideoFileType extends FileTypeAbstract {
 		Config config = Config.getInstance();
 		int exitVal;
 		FileTypeProcessReturnInfo returnVal = new FileTypeProcessReturnInfo();
-		// ids of files that should be marked in_use when the process_state is updated at the end of processing
-		returnVal.fileIdsToMarkInUse = new HashSet<Integer>();
 		FfmpegFileInfo info;
 		BigInteger totalSize = BigInteger.ZERO;
 		
@@ -189,15 +185,16 @@ public class VODVideoFileType extends FileTypeAbstract {
 				generatedKeys.next();
 				int id = generatedKeys.getInt(1);
 				s.close();
-				f.id = id;
-				// register new file with the heartbeat manager
-				File newFile = new File(id, null, size, FileType.VOD_VIDEO_RENDER.getObj());
-				// TODO: these need to be unregistered if fails
-				HeartbeatManager.getInstance().registerFile(newFile);
-				logger.debug("File record created with id "+f.id+" for render with height "+f.h+" belonging to source file with id "+file.getId()+".");
 				
+				File newFile = new File(id, null, size, FileType.VOD_VIDEO_RENDER.getObj());
 				// add to set of files to mark in_use when processing completed
-				returnVal.fileIdsToMarkInUse.add(f.id);
+				if (!returnVal.registerNewFile(newFile)) {
+					// error occurred. abort
+					logger.warn("Error trying to register newly created file.");
+					return returnVal;
+				}
+				logger.debug("File record created with id "+id+" for render with height "+f.h+" belonging to source file with id "+file.getId()+".");
+				
 				
 				// add entry to OutputFiles array which will be used to populate VideoFiles table later
 				// get width and height of output
@@ -206,15 +203,15 @@ public class VODVideoFileType extends FileTypeAbstract {
 					logger.warn("Error retrieving info for file rendered from source file with id "+file.getId()+".");
 					return returnVal;
 				}
-				outputFiles.add(new OutputFile(f.id, info.getW(), info.getH(), f.qualityDefinitionId));
+				outputFiles.add(new OutputFile(newFile.getId(), info.getW(), info.getH(), f.qualityDefinitionId));
 				
 				// copy file to server
-				logger.info("Moving output file with id "+f.id+" to web app...");
-				if (!FileHelper.moveToWebApp(f.outputFile, f.id)) {
-					logger.error("Error trying to move output file with id "+f.id+" to web app.");
+				logger.info("Moving output file with id "+newFile.getId()+" to web app...");
+				if (!FileHelper.moveToWebApp(f.outputFile, newFile.getId())) {
+					logger.error("Error trying to move output file with id "+newFile.getId()+" to web app.");
 					return returnVal;
 				}
-				logger.info("Output file with id "+f.id+" moved to web app.");
+				logger.info("Output file with id "+newFile.getId()+" moved to web app.");
 			}
 		} catch (SQLException e) {
 			throw(new RuntimeException("Error trying to register files in database."));
@@ -265,7 +262,6 @@ public class VODVideoFileType extends FileTypeAbstract {
 		public int vBitrate;
 		public double fr; // the frame rate that the output file should be
 		public int qualityDefinitionId;
-		public int id;
 		public java.io.File outputFile;
 		public java.io.File progressFile;
 	}

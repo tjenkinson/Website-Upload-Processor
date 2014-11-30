@@ -161,8 +161,7 @@ public class JobPoller {
 		 * Removes all child files and optionally the source file.
 		 * If any child files have child files they will also be delete recursively.
 		 * The source file and record will never be removed if one or more of the child files fails to be removed.
-		 * If the source file has been registered outside of this function and is deleted, it still needs to be unregistered outside of this function.
-		 * The child files will be registered and unregistered with the heartbeat manager.
+		 * The source and child files will be registered and unregistered with the heartbeat manager.
 		 * @param dbConnection
 		 * @param sourceFile
 		 * @param removeSourceFile
