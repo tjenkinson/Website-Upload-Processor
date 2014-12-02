@@ -1,6 +1,6 @@
 package uk.co.la1tv.websiteUploadProcessor.fileTypes;
 
-import java.util.HashSet;
+import java.sql.Connection;
 import java.util.List;
 
 import org.apache.log4j.Logger;
@@ -21,14 +21,12 @@ public class CoverArtImageFileType extends FileTypeAbstract {
 	private static Logger logger = Logger.getLogger(CoverArtImageFileType.class);
 
 	@Override
-	public FileTypeProcessReturnInfo process(java.io.File source, java.io.File workingDir, File file) {
+	public FileTypeProcessReturnInfo process(final Connection dbConnection, java.io.File source, java.io.File workingDir, File file) {
 		// any image format and size is acceptable. It will always be cropped to become correct aspect ratio
 		Config config = Config.getInstance();
 		FileTypeProcessReturnInfo returnVal = new FileTypeProcessReturnInfo();
-		// ids of files that should be marked in_use when the process_state is updated at the end of processing
-		returnVal.fileIdsToMarkInUse = new HashSet<Integer>();
 		
-		DbHelper.updateStatus(file.getId(), "Processing image.", null);
+		DbHelper.updateStatus(dbConnection, file.getId(), "Processing image.", null);
 		
 		ImageMagickFormat inputFormat = ImageMagickFormat.getFormatFromExtension(file.getExtension());
 		if (inputFormat == null) {
@@ -38,7 +36,7 @@ public class CoverArtImageFileType extends FileTypeAbstract {
 		}
 		
 		final List<ImageFormat> formats = ImageProcessorHelper.getFormats(config.getList("encoding.coverArtImageFormats"), workingDir);
-		returnVal.success = ImageProcessorHelper.process(returnVal, source, workingDir, formats, inputFormat, ImageMagickFormat.JPG, file, FileType.COVER_ART_IMAGE_RENDER);
+		returnVal.success = ImageProcessorHelper.process(dbConnection, returnVal, source, workingDir, formats, inputFormat, ImageMagickFormat.JPG, file, FileType.COVER_ART_IMAGE_RENDER);
 		return returnVal;
 	}
 	

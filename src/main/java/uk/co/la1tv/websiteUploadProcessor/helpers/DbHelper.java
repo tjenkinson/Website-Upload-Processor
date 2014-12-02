@@ -41,20 +41,19 @@ public class DbHelper {
 	 * @throws SQLException
 	 */
 	public static File buildFileFromResult(ResultSet r) throws SQLException {
-		return new File(r.getInt("id"), r.getString("filename"), r.getDouble("size"), FileType.getFromId(r.getInt("file_type_id")));
+		return new File(r.getInt("id"), r.getString("filename"), r.getLong("size"), FileType.getFromId(r.getInt("file_type_id")));
 	}
 	
 	/**
 	 * Set the current processing message and/or percentage in the database for a file.
+	 * @param connection: The database connection to use.
 	 * @param fileId: the file id in the database
 	 * @param msg: The message to set. null means no message.
 	 * @param percentage: The percentage of processing from 0-100. null means no percentage
 	 * @return boolean representing whether update successful.
 	 */
-	public static boolean updateStatus(double d, String msg, Integer percentage) {
-		Db db = DbHelper.getMainDb();
+	public static boolean updateStatus(Connection connection, double id, String msg, Integer percentage) {
 		try {
-			Connection connection = db.getConnection();
 			PreparedStatement s = connection.prepareStatement("UPDATE files SET msg=?, process_percentage=? WHERE id=?");
 			s.setString(1, msg);
 			if (percentage != null) {
@@ -63,7 +62,7 @@ public class DbHelper {
 			else {
 				s.setNull(2, Types.INTEGER);
 			}
-			s.setDouble(3, d);
+			s.setDouble(3, id);
 			boolean result = s.executeUpdate() == 1;
 			s.close();
 			return result;

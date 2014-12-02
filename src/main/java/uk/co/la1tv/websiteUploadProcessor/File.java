@@ -21,16 +21,17 @@ public class File {
 	
 	private int id;
 	private String name;
-	private double size;
+	private long size;
 	private FileTypeAbstract type;
 	
-	public File(int id, String name, double size, FileTypeAbstract type) {
+	public File(int id, String name, long size, FileTypeAbstract type) {
 	
 		this.id = id;
 		this.name = name;
 		this.size = size;
 		this.type = type;
-		logger.debug("Created File object for file of type '"+type.getClass().getSimpleName()+"' with id "+id+" and name '"+name+"'.");
+		String namePart = name != null ? " and name '"+name+"'" : "";
+		logger.debug("Created File object for file of type '"+type.getClass().getSimpleName()+"' with id "+id+namePart+".");
 	}
 	
 	@Override
@@ -51,7 +52,7 @@ public class File {
 		return name;
 	}
 	
-	public double getSize() {
+	public long getSize() {
 		return size;
 	}
 	
@@ -65,7 +66,7 @@ public class File {
 		return a.length > 1 ? a[a.length-1] : null;
 	}
 	
-	public void process() {
+	public void process(Connection dbConnection) {
 		
 		Config config = Config.getInstance();
 		// used to signify error if problem copying file from pending files locatioon to server (if working with copy) or if there was a problem moving the source fie from the pending directory to the main files directory.
@@ -76,7 +77,7 @@ public class File {
 		FileTypeProcessReturnInfo info = null;
 		
 		logger.info("Started processing file with id "+getId()+" and name '"+getName()+"'.");
-		DbHelper.updateStatus(getId(), "Started processing.", null);
+		DbHelper.updateStatus(dbConnection, getId(), "Started processing.", null);
 		
 		String fileWorkingDir = FileHelper.getFileWorkingDir(getId());
 		String sourceFilePath = FileHelper.getSourcePendingFilePath(getId());
@@ -109,7 +110,7 @@ public class File {
 		}
 		
 		if (!errorMovingSourceFile && !overQuota) {
-			info = type.process(new java.io.File(destinationSourceFilePath), new java.io.File(fileWorkingDir), this);
+			info = type.process(dbConnection, new java.io.File(destinationSourceFilePath), new java.io.File(fileWorkingDir), this);
 		}
 		
 		if (info == null) {
@@ -155,56 +156,75 @@ public class File {
 		
 		if (!errorMovingSourceFile) {
 			// update process_state in db and mark files as in_use
-			Connection dbConnection = DbHelper.getMainDb().getConnection();
 			logger.debug("Updating process_state in database...");
 			try {
 				logger.trace("Starting database transaction.");
 				dbConnection.prepareStatement("START TRANSACTION").executeUpdate();
-				PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE id=?");
+				// get an exclusive lock on the source file then check that we still have the file registered with the heartbeat manager
+				PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE id=? FOR UPDATE");
 				s.setInt(1, getId());
 				ResultSet r = s.executeQuery();
+				
+				boolean lostHeartbeatRegistration = false;
 				if (!r.next()) {
 					logger.error("Record could not be found in database for file with id "+getId()+".");
+					lostHeartbeatRegistration = true; // if the file record is gone presume lost registration, as if this is not the case it will happen shortly
 				}
-				// check that ready_for_delete is still 0.
 				else {
-					if (r.getInt("ready_for_delete") == 1) {
-						logger.debug("The file with id "+getId()+" has been processed but during this time it has been marked for deletion. Updating process_state anyway.");
+					// check the file is still registered with the heartbeat manager.
+					// could have lost the registration if there were sqlexceptions or other database issues. Unlikely but possible.
+					// if the registration has been lost another server could currently also be processing this file. As long as we don't update the process state or mark the files as in use everything is still stable.
+					lostHeartbeatRegistration = !HeartbeatManager.getInstance().isFileRegistered(this);
+				}
+				s.close();
+					
+				if (!lostHeartbeatRegistration && info.success && info.getNewFiles().size() > 0) {
+					
+					String query = "UPDATE files SET in_use=1 WHERE id IN (";
+					
+					for (int i=0; i<info.getNewFiles().size(); i++) {
+						if (i > 0) {
+							query += ",";
+						}
+						query += "?";
 					}
-					
-					
-					if (info.success && info.fileIdsToMarkInUse.size() > 0) {
-						
-						String query = "UPDATE files SET in_use=1 WHERE id IN (";
-						
-						for (int i=0; i<info.fileIdsToMarkInUse.size(); i++) {
-							if (i > 0) {
-								query += ",";
-							}
-							query += "?";
+					query += ")";
+					PreparedStatement s2 = dbConnection.prepareStatement(query);
+					{
+						int i=1;
+						for(File file : info.getNewFiles()) {
+							s2.setInt(i++, file.getId());
 						}
-						query += ")";
-						PreparedStatement s2 = dbConnection.prepareStatement(query);
-						{
-							int i=1;
-							for(Integer id : info.fileIdsToMarkInUse) {
-								s2.setInt(i++, id);
-							}
-						}
-						if (s2.executeUpdate() != info.fileIdsToMarkInUse.size()) {
-							logger.error("Error occurred setting in_use to 1. Processing will be marked as failing.");
-							// rollback to make sure if some were marked as in_use they all get reverted back
-							dbConnection.prepareStatement("ROLLBACK").executeUpdate();
-							// start another transaction because rest of code in this try catch block is expecting transaction
-							dbConnection.prepareStatement("START TRANSACTION").executeUpdate();
-							// causes processing to be marked as failure
-							info.success = false;
-						}
-						s2.close();
 					}
-					
+					if (s2.executeUpdate() != info.getNewFiles().size()) {
+						logger.error("Error occurred setting in_use to 1. Processing will be marked as failing.");
+						// causes processing to be marked as failure
+						info.success = false;
+						// rollback to make sure if some were marked as in_use they all get reverted back
+						dbConnection.prepareStatement("ROLLBACK").executeUpdate();
+						// start another transaction because rest of code in this try catch block is expecting transaction
+						dbConnection.prepareStatement("START TRANSACTION").executeUpdate();
+						
+						// get an exclusive lock on the source file then check again that we still have the file registered with the heartbeat manager
+						PreparedStatement s3 = dbConnection.prepareStatement("SELECT * FROM files WHERE id=? FOR UPDATE");
+						s3.setInt(1, getId());
+						ResultSet r2 = s3.executeQuery();
+						if (!r2.next()) {
+							logger.error("Record could no longer be found in database for file with id "+getId()+"."); // therefore we must have now lost the registration with the heartbeat manager for some reason, or we are about to next time it tries to update the timestamp and realises the record has gone
+							lostHeartbeatRegistration = true;
+						}
+						else {
+							lostHeartbeatRegistration = !HeartbeatManager.getInstance().isFileRegistered(this);
+						}
+						s3.close();
+						
+					}
+					s2.close();
+				}
+				
+				if (!lostHeartbeatRegistration) {
 					// update process_state and set error message
-					DbHelper.updateStatus(getId(), !info.success ? info.msg : "", null);
+					DbHelper.updateStatus(dbConnection, getId(), !info.success ? info.msg : "", null);
 					PreparedStatement s2 = dbConnection.prepareStatement("UPDATE files SET process_state=? WHERE id=?");
 					s2.setInt(1, info.success ? 1 : 2); // a value of 1 represents success, 2 represents failure
 					s2.setInt(2, getId());
@@ -220,6 +240,12 @@ public class File {
 					}
 					s2.close();
 				}
+				else {
+					logger.trace("Rolling back database transaction.");
+					// nothing should have changed, but might as well rollback instead of commit to be sure
+					dbConnection.prepareStatement("ROLLBACK").executeUpdate();
+					logger.error("Heartbeat registration was lost for for file with id "+getId()+" for some reason, and therefore files were not marked as in_use and the process state was not updated.");
+				}
 				s.close();
 			} catch (SQLException e) {
 				try {
@@ -229,6 +255,12 @@ public class File {
 				}
 				logger.error("Error querying database in order to update file process_state for file with id "+getId()+" and mark files as in_use.");
 			}
+		}
+		
+		// now unregister all the new files that have been created from the heartbeat manager.
+		// they should have been registered at the time they were created
+		for(File file : info.getNewFiles()) {
+			HeartbeatManager.getInstance().unRegisterFile(file);
 		}
 		
 		if (workingDirCreated) {
