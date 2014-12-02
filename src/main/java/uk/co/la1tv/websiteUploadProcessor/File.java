@@ -244,7 +244,7 @@ public class File {
 					logger.trace("Rolling back database transaction.");
 					// nothing should have changed, but might as well rollback instead of commit to be sure
 					dbConnection.prepareStatement("ROLLBACK").executeUpdate();
-					logger.error("Heartbeat registratuion was lost for for file with id "+getId()+" for some reason, and therefore files were not marked as in_use and the process state was not updated.");
+					logger.error("Heartbeat registration was lost for for file with id "+getId()+" for some reason, and therefore files were not marked as in_use and the process state was not updated.");
 				}
 				s.close();
 			} catch (SQLException e) {

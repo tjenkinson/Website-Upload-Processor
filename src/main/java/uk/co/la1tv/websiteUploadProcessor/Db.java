@@ -35,21 +35,10 @@ public class Db {
 	public Connection getConnection() {
 		Connection connection = null;
 		logger.info("Connecting to database.");
-		Config config = Config.getInstance();
-		for(int i=0; i<config.getInt("db.noConnectionRetries") && connection == null; i++) {
-			if (i > 0) {
-				logger.warn("Connection failed. Retrying in "+config.getInt("db.connectionRetryInterval")+" seconds. Attempt "+(i+1)+".");
-				try {
-					Thread.sleep(config.getInt("db.connectionRetryInterval")*1000);
-				} catch (InterruptedException e) {
-					logger.info("Thread interrupted whilst trying to connect to database.");
-					Thread.currentThread().interrupt();
-					break;
-				}
-			}
-			try {
-				connection = DriverManager.getConnection("jdbc:mysql://"+host+"/"+database, username, password);
-			} catch (SQLException e) {}
+		try {
+			connection = DriverManager.getConnection("jdbc:mysql://"+host+"/"+database, username, password);
+		} catch (SQLException e) {
+			e.printStackTrace();
 		}
 		if (connection == null) {
 			logger.warn("Could not connect to the database for some reason.");

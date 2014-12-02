@@ -54,24 +54,28 @@ public class JobPoller {
 	}
 	
 	private class PollTask extends TimerTask {
-		
-		private final Connection dbConnection;
-		
-		public PollTask() {
-			dbConnection = DbHelper.getMainDb().getConnection();
-		}
+	
 		
 		@Override
 		public void run() {
 			synchronized(lock1) {
-				
-				deleteFiles();
-				processFiles();
+				final Connection dbConnection = DbHelper.getMainDb().getConnection();
+				if (dbConnection == null) {
+					logger.warn("Can't poll for files to be processed or updated at the moment as can't connect to database.");
+					return;
+				}
+				deleteFiles(dbConnection);
+				processFiles(dbConnection);
+				try {
+					dbConnection.close();
+				} catch (SQLException e) {
+					e.printStackTrace();
+				}
 			}
 		}
 		
 		// look for files to process kick of jobs to process them
-		private void processFiles() {
+		private void processFiles(Connection dbConnection) {
 			logger.info("Polling for files that need processing...");
 			try {
 				PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE ready_for_processing=1 AND process_state=0 AND ready_for_delete=0 AND (session_id IS NOT NULL OR in_use=1) AND (heartbeat IS NULL OR heartbeat<?)"+getFileTypeIdsWhereString("file_type_id")+" ORDER BY updated_at DESC");
@@ -94,14 +98,16 @@ public class JobPoller {
 						continue;
 					}
 					
-					if (!heartbeatManager.registerFile(file)) {
+					Object heartbeatManagerFileLockObj = new Object();
+					
+					if (!heartbeatManager.registerFile(file, false, heartbeatManagerFileLockObj)) {
 						logger.info("File with id "+file.getId()+" will not be processed because it's heartbeat was updated somewhere else.");
 						continue;
 					}
 					
 					DbHelper.updateStatus(dbConnection, file.getId(), "Added to process queue.", null);
 					filesInProgress.add(file);
-					threadPool.execute(new Job(taskCompletionHandler, file));
+					threadPool.execute(new Job(taskCompletionHandler, file, heartbeatManagerFileLockObj));
 					logger.info("Created and scheduled process job for file with id "+r.getInt("id")+".");
 				}
 				s.close();
@@ -113,7 +119,7 @@ public class JobPoller {
 		}
 		
 		// look for files that are pending deletion, or temporary and no longer belong to a session, and delete them.
-		private void deleteFiles() {
+		private void deleteFiles(Connection dbConnection) {
 			
 			logger.info("Polling for files pending deletion...");
 			try {
@@ -128,13 +134,14 @@ public class JobPoller {
 				while(r.next()) {
 					File file = DbHelper.buildFileFromResult(r);
 					logger.info("Attempting to remove file with id "+file.getId()+" and any child files it has.");
-					if (!removeChildFilesAndRecords(file, true)) {
+					if (!removeChildFilesAndRecords(dbConnection, file, true)) {
 						logger.warn("Some files could not be removed for some reason and the file record for this (id "+file.getId()+") still exists.");
 					}
 				}
 				s.close();
 			} catch (SQLException e) {
 				logger.error("SQLException when trying to query databases for files that need deleting.");
+				e.printStackTrace();
 			}
 			logger.info("Finished polling for files pending deletion.");
 		}
@@ -167,7 +174,7 @@ public class JobPoller {
 		 * @param removeSourceFile
 		 * @return true if all files and records were removed successfully or false if one or more failed.
 		 */
-		private boolean removeChildFilesAndRecords(File sourceFile, boolean removeSourceFile) {
+		private boolean removeChildFilesAndRecords(Connection dbConnection, File sourceFile, boolean removeSourceFile) {
 			
 			if (!heartbeatManager.registerFile(sourceFile)) {
 				logger.info("File with id "+sourceFile.getId()+" and any of its child files will not be deleted right now because it's heartbeat was updated somewhere else.");
@@ -175,20 +182,40 @@ public class JobPoller {
 			}
 			
 			boolean sourceFileMarkedForDeletion = false;
-			boolean allFilesDeletedSuccesfully = true;
 			
 			// delete actual files
 			
 			{
 				if (removeSourceFile) {
-					// set the ready_for_delete flag to 1 so that if some of the child files fail to be deleted apps can still know that this is pending deletion and may be missing some child files
+					// set the ready_for_delete flag to 1 so that if some of the child files fail to be deleted, or this file, apps can still know that this is pending deletion and may be missing some child files, and should not be used
 					// if the ready_for_delete flag is set then apps should treat this as though the file has already been deleted
-					
 					try {
-						PreparedStatement s = dbConnection.prepareStatement("UPDATE files SET ready_for_delete=1 WHERE id=?");
+						dbConnection.prepareStatement("START TRANSACTION").executeUpdate();
+						PreparedStatement s = dbConnection.prepareStatement("SELECT ready_for_delete FROM files WHERE id=? FOR UPDATE");
 						s.setInt(1, sourceFile.getId());
-						s.executeUpdate();
-						sourceFileMarkedForDeletion = true;
+						s.executeQuery();
+						ResultSet r = s.getResultSet();
+						if (r.next()) {
+							// record exists and now have lock
+							if (!r.getBoolean("ready_for_delete")) {
+								// this is not marked for deletion. Mark it
+								s = dbConnection.prepareStatement("UPDATE files SET ready_for_delete=1 WHERE id=?");
+								s.setInt(1, sourceFile.getId());
+								if (s.executeUpdate() == 1) {
+									sourceFileMarkedForDeletion = true;
+								}
+								else {
+									logger.error("There was an error trying to update ready_for_delete for source file with id "+sourceFile.getId()+".");
+								}
+							}
+							else {
+								sourceFileMarkedForDeletion = true;
+							}
+						}
+						else {
+							logger.error("Could not mark source file with id "+sourceFile.getId()+" for deletion because it couldn't be found!");
+						}
+						dbConnection.prepareStatement("COMMIT").executeUpdate();
 					}
 					catch(SQLException e) {
 						logger.error("An SQLException occurred whilst trying to mark file record with id "+sourceFile.getId()+" for deletion.");
@@ -196,7 +223,9 @@ public class JobPoller {
 				}
 			}
 			
-			if (removeSourceFile && sourceFileMarkedForDeletion) {
+			boolean allFilesDeletedSuccesfully = true;
+			
+			if (!removeSourceFile || sourceFileMarkedForDeletion) {
 			
 				{
 					try {
@@ -209,13 +238,15 @@ public class JobPoller {
 							// create File obj
 							File file = DbHelper.buildFileFromResult(r);
 							// remove this files child files, then the file itself (if deleting all the child files is successful)
-							if (!removeChildFilesAndRecords(file, true)) {
-								// one or more files out of the current one or its descendants could not be removed.
+							if (!removeChildFilesAndRecords(dbConnection, file, true)) {
+								// returns false if one or more files out of the current one or its descendants could not be removed.
+								logger.error("An error occurred when trying to remove file with id "+file.getId()+" and any child files it has.");
 								allFilesDeletedSuccesfully = false;
 							}
 						}
 						s.close();
 					} catch (SQLException e) {
+						e.printStackTrace();
 						logger.error("SQLException when trying to query databases for files that need deleting.");
 						allFilesDeletedSuccesfully = false;
 					}
