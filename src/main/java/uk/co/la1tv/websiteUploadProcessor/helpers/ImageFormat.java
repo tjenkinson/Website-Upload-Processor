@@ -8,6 +8,7 @@ public class ImageFormat {
 		this.outputFile = outputFile;
 	}
 	
+	public int id;
 	public int w;
 	public int h;
 	public java.io.File outputFile;

@@ -1,6 +1,5 @@
 # this should be copied to config.properties in this folder, and then completed.
 
-server.id = # should contain an integer that uniquely represents this server
 db.host = 
 db.database = 
 db.username = 
@@ -11,4 +10,4 @@ imagemagick.convertLocation =
 imagemagick.identifyLocation = 
 files.webappFilesLocation = 
 files.webappPendingFilesLocation = 
-files.workingFilesLocation = # each server will create another directory in here which matches its id, and this will be the location where files are worked on
+files.workingFilesLocation = 
