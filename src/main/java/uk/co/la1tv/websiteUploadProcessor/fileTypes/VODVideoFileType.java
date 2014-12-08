@@ -8,6 +8,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 
 import org.apache.log4j.Logger;
@@ -30,14 +31,16 @@ public class VODVideoFileType extends FileTypeAbstract {
 	private static Logger logger = Logger.getLogger(VODVideoFileType.class);
 
 	@Override
-	public FileTypeProcessReturnInfo process(final Connection dbConnection, java.io.File source, java.io.File workingDir, final File file) {
+	public FileTypeProcessReturnInfo process(java.io.File source, java.io.File workingDir, final File file) {
 		Config config = Config.getInstance();
 		int exitVal;
 		FileTypeProcessReturnInfo returnVal = new FileTypeProcessReturnInfo();
+		// ids of files that should be marked in_use when the process_state is updated at the end of processing
+		returnVal.fileIdsToMarkInUse = new HashSet<Integer>();
 		FfmpegFileInfo info;
 		BigInteger totalSize = BigInteger.ZERO;
 		
-		DbHelper.updateStatus(dbConnection, file.getId(), "Checking video format.", null);
+		DbHelper.updateStatus(file.getId(), "Checking video format.", null);
 		// get source file information.
 		info = FfmpegHelper.getFileInfo(source, workingDir);
 		if (info == null) {
@@ -98,8 +101,10 @@ public class VODVideoFileType extends FileTypeAbstract {
 		
 		ArrayList<OutputFile> outputFiles = new ArrayList<OutputFile>();
 		
+		Connection dbConnection = DbHelper.getMainDb().getConnection();
+		
 		final String renderRequiredFormatsMsg = "Rendering video into required formats.";
-		DbHelper.updateStatus(dbConnection, file.getId(), renderRequiredFormatsMsg, 0);
+		DbHelper.updateStatus(file.getId(), renderRequiredFormatsMsg, 0);
 		
 		// loop through different formats and render videos for ones that are applicable
 		for (final Format f : formatsToRender) {
@@ -131,7 +136,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 					// called whenever the process percentage changes
 					// calculate the actual percentage when taking all renders into account
 					int actualPercentage = (int) Math.floor(((float) monitor.getPercentage()/formatsToRender.size()) + (formatsToRender.indexOf(f)*(100.0/formatsToRender.size())));
-					DbHelper.updateStatus(dbConnection, file.getId(), renderRequiredFormatsMsg, actualPercentage);
+					DbHelper.updateStatus(file.getId(), renderRequiredFormatsMsg, actualPercentage);
 				}
 			});
 			exitVal = RuntimeHelper.executeProgram(new String[] {config.getString("ffmpeg.location"), "-y", "-nostdin", "-timelimit", ""+config.getInt("ffmpeg.videoEncodeTimeLimit"), "-progress", ""+f.progressFile.getAbsolutePath(), "-i", source.getAbsolutePath(), "-vf", "scale=trunc(("+f.h+"*a)/2)*2:"+f.h, "-strict", "experimental", "-acodec", "aac", "-b:a", f.aBitrate+"k", "-ac", "2", "-ar", "48000", "-vcodec", "libx264", "-vprofile", "main", "-g", "48", "-b:v", f.vBitrate+"k", "-maxrate", f.vBitrate+"k", "-bufsize", f.vBitrate*2+"k", "-preset", "medium", "-crf", "16", "-vsync", "vfr", "-af", "aresample=async=1000", "-movflags", "+faststart", "-r", f.fr+"", "-f", "mp4", f.outputFile.getAbsolutePath()}, workingDir, null, null);
@@ -158,7 +163,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 		// create entries in Files with in_use set to 0
 		// and copy files across to web app
 
-		DbHelper.updateStatus(dbConnection, file.getId(), "Finalizing renders.", null);
+		DbHelper.updateStatus(file.getId(), "Finalizing renders.", null);
 		try {
 			for (Format f : formatsToRender) {
 				
@@ -167,34 +172,25 @@ public class VODVideoFileType extends FileTypeAbstract {
 				logger.debug("Creating file record for render with height "+f.h+" belonging to source file with id "+file.getId()+".");
 
 				Timestamp currentTimestamp = new Timestamp(System.currentTimeMillis());
-				PreparedStatement s = dbConnection.prepareStatement("INSERT INTO files (in_use,created_at,updated_at,size,file_type_id,source_file_id,heartbeat,process_state) VALUES(0,?,?,?,?,?,?,1)", Statement.RETURN_GENERATED_KEYS);
+				PreparedStatement s = dbConnection.prepareStatement("INSERT INTO files (in_use,created_at,updated_at,size,file_type_id,source_file_id,process_state) VALUES(0,?,?,?,?,?,1)", Statement.RETURN_GENERATED_KEYS);
 				s.setTimestamp(1, currentTimestamp);
 				s.setTimestamp(2, currentTimestamp);
 				s.setLong(3, size);
 				s.setInt(4, FileType.VOD_VIDEO_RENDER.getObj().getId());
 				s.setInt(5, file.getId());
-				// so that nothing else will pick up this file and it can be registered with the heartbeat manager immediately
-				s.setTimestamp(6, currentTimestamp);
 				if (s.executeUpdate() != 1) {
 					s.close();
 					logger.warn("Error occurred when creating database entry for a file.");
 					return returnVal;
 				}
-				
 				ResultSet generatedKeys = s.getGeneratedKeys();
 				generatedKeys.next();
-				int id = generatedKeys.getInt(1);
+				f.id = generatedKeys.getInt(1);
 				s.close();
+				logger.debug("File record created with id "+f.id+" for render with height "+f.h+" belonging to source file with id "+file.getId()+".");
 				
-				File newFile = new File(id, null, size, FileType.VOD_VIDEO_RENDER.getObj());
 				// add to set of files to mark in_use when processing completed
-				if (!returnVal.registerNewFile(newFile)) {
-					// error occurred. abort
-					logger.warn("Error trying to register newly created file.");
-					return returnVal;
-				}
-				logger.debug("File record created with id "+id+" for render with height "+f.h+" belonging to source file with id "+file.getId()+".");
-				
+				returnVal.fileIdsToMarkInUse.add(f.id);
 				
 				// add entry to OutputFiles array which will be used to populate VideoFiles table later
 				// get width and height of output
@@ -203,15 +199,15 @@ public class VODVideoFileType extends FileTypeAbstract {
 					logger.warn("Error retrieving info for file rendered from source file with id "+file.getId()+".");
 					return returnVal;
 				}
-				outputFiles.add(new OutputFile(newFile.getId(), info.getW(), info.getH(), f.qualityDefinitionId));
+				outputFiles.add(new OutputFile(f.id, info.getW(), info.getH(), f.qualityDefinitionId));
 				
 				// copy file to server
-				logger.info("Moving output file with id "+newFile.getId()+" to web app...");
-				if (!FileHelper.moveToWebApp(f.outputFile, newFile.getId())) {
-					logger.error("Error trying to move output file with id "+newFile.getId()+" to web app.");
+				logger.info("Moving output file with id "+f.id+" to web app...");
+				if (!FileHelper.moveToWebApp(f.outputFile, f.id)) {
+					logger.error("Error trying to move output file with id "+f.id+" to web app.");
 					return returnVal;
 				}
-				logger.info("Output file with id "+newFile.getId()+" moved to web app.");
+				logger.info("Output file with id "+f.id+" moved to web app.");
 			}
 		} catch (SQLException e) {
 			throw(new RuntimeException("Error trying to register files in database."));
@@ -262,6 +258,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 		public int vBitrate;
 		public double fr; // the frame rate that the output file should be
 		public int qualityDefinitionId;
+		public int id;
 		public java.io.File outputFile;
 		public java.io.File progressFile;
 	}

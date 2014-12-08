@@ -1,7 +1,5 @@
 package uk.co.la1tv.websiteUploadProcessor.fileTypes;
 
-import java.sql.Connection;
-
 import uk.co.la1tv.websiteUploadProcessor.File;
 
 public abstract class FileTypeAbstract {
@@ -22,11 +20,10 @@ public abstract class FileTypeAbstract {
 	
 	/**
 	 * Called when a file is ready to be processed.
-	 * @param dbConnection: a Connection object which provides access to the database.
 	 * @param source: A io file object representing the source file's location.
 	 * @param workingDir: A io file object representing the location of this files working dir.
 	 * @param file: The actual file object.
 	 * @return null if error processing or set of ids to mark as in_use when process is marked as completed
 	 */
-	public abstract FileTypeProcessReturnInfo process(Connection dbConnection, java.io.File source, java.io.File workingDir, File file);
+	public abstract FileTypeProcessReturnInfo process(java.io.File source, java.io.File workingDir, File file);
 }
