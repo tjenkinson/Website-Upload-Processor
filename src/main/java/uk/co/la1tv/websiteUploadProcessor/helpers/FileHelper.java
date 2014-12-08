@@ -32,11 +32,10 @@ public class FileHelper {
 	 * Empties the working directory. Also creates it if it doesn't exist.
 	 */
 	public static void cleanWorkingDir() {
-		String workingDirPath = FileHelper.format(Config.getInstance().getString("files.workingFilesLocation"));
-		if (Files.exists(Paths.get(workingDirPath), LinkOption.NOFOLLOW_LINKS)) {
+		if (Files.exists(Paths.get(getWorkingDir()), LinkOption.NOFOLLOW_LINKS)) {
 			logger.info("Cleaning working directory...");
 			try {
-				FileUtils.cleanDirectory(new File(workingDirPath));
+				FileUtils.cleanDirectory(new File(getWorkingDir()));
 			} catch (IOException e) {
 				throw(new RuntimeException("Error occurred when trying to clear working directory."));
 			}
@@ -45,7 +44,7 @@ public class FileHelper {
 		else {
 			logger.info("Working directory doesn't exist. Creating it...");
 			try {
-				FileUtils.forceMkdir(new File(workingDirPath));
+				FileUtils.forceMkdir(new File(getWorkingDir()));
 			} catch (IOException e) {
 				throw(new RuntimeException("Error occurred when trying to create working directory."));
 			}
@@ -53,8 +52,13 @@ public class FileHelper {
 		}
 	}
 	
+	/**
+	 * Get the working directory for this server.
+	 * @return the working directory for this server.
+	 */
 	public static String getWorkingDir() {
-		return FileHelper.format(Config.getInstance().getString("files.workingFilesLocation"));
+		Config config = Config.getInstance();
+		return FileHelper.format(config.getString("files.workingFilesLocation")+"/"+config.getInt("server.id"));
 	}
 	
 	public static String getFileWorkingDir(int fileId) {
