@@ -235,12 +235,17 @@ public class HeartbeatManager {
 	// the main program code should use isFileRegistered to check if the file is still registered before performing tasks which require exclusivity (probably whilst in a database transaction with an exclusive lock)
 	private void forciblyUnregisterFile(File file) {
 		synchronized(lock1) {
+			FileAndCounter toRemove = null;
 			for(FileAndCounter fileAndCounter : files) {
 				if (fileAndCounter.getFile() == file) {
-					files.remove(fileAndCounter);
-					logger.warn("Forcibly unregistered file with id "+file.getId()+" as can no longer guarentee exclusive access for some reason.");
-					return;
+					toRemove = fileAndCounter;
+					break;
 				}
+			}
+			
+			if (toRemove != null) {
+				files.remove(toRemove);
+				logger.warn("Forcibly unregistered file with id "+file.getId()+" as can no longer guarantee exclusive access for some reason.");
 			}
 		}
 	}
@@ -255,87 +260,92 @@ public class HeartbeatManager {
 		
 		@Override
 		public synchronized void run() {
-			logger.debug("Updating heartbeat timestamps...");
-			if (files.isEmpty()) {
-				logger.debug("No files processing that need timestamps updating.");
-				return;
-			}
 			
-			synchronized(lock1) {
+			try {
+				logger.debug("Updating heartbeat timestamps...");
+				if (files.isEmpty()) {
+					logger.debug("No files processing that need timestamps updating.");
+					return;
+				}
 				
-				Connection dbConnection = DbHelper.getMainDb().getConnection();
-				for (FileAndCounter fileAndCounter : files) {
-					File file = fileAndCounter.getFile();
-				
-					if (dbConnection == null) {
-						// error connecting to database
-						// therefore can't update timestamp so can't guarantee this file is only registered with this server so forcivly unregister it
-						forciblyUnregisterFile(file);
-					}
-					else {
-						boolean unregisterFile = false;
-						try {
-							dbConnection.prepareStatement("START TRANSACTION").executeUpdate();
-							// first get an exclusive lock on the file record
-							PreparedStatement s = dbConnection.prepareStatement("SELECT heartbeat FROM files WHERE id=? FOR UPDATE");
-							s.setInt(1, file.getId());
-							s.executeQuery();
-							ResultSet r = s.getResultSet();
-							if (!r.next()) {
-								// couldn't find the record for some reason
-								// unregister the file
-								logger.warn("Attempting to update timestamp for file with id "+file.getId()+" but could not find record.");
-								unregisterFile = true;
-							}
-							s.close();
-							
-							// now that we have an exclusive lock check to see if it has been too long since the last update.
-							// need to use the time locally that we last updated not the one in the record we just received because if has been too long, that time might have been updated somewhere else
-							// if this is the case unregister the file
-							if (fileAndCounter.timeHeartbeatLastUpdated != null && fileAndCounter.timeHeartbeatLastUpdated + updateInterval < System.currentTimeMillis()) {
-								// the update interval has passed since the last update so it can no longer be guarenteed that another server hasn't picked up the file.
-								unregisterFile = true;
-							}
-							
-							if (unregisterFile) {
-								forciblyUnregisterFile(file);
-								dbConnection.prepareStatement("ROLLBACK").executeUpdate();
-							}
-							else {
-								// now that we have an exclusive lock we can be confident that this query will execute pretty instantly and therefore the time will be accurate.
-								// if we didn't get the lock above then this update command would need to get an exclusive lock, which could take some time, meaning then when it gets the lock the time that would be written would be old
-								// whenever a server tries to register a file they first request an exclusive lock on the record.
-								// provided that all requests to the mysql server with exclusive locks are handled in the order that the locks were requested, there should be no issues
-								Timestamp currentTimestamp = new Timestamp(System.currentTimeMillis());
-								s = dbConnection.prepareStatement("UPDATE files SET heartbeat=? WHERE id=?");
-								s.setTimestamp(1, currentTimestamp);
-								s.setInt(2, file.getId());
-								if (s.executeUpdate() != 1) {
-									logger.error("Error occurred when updating heartbeat timestamp for file with id "+file.getId()+".");
-									dbConnection.prepareStatement("ROLLBACK").executeUpdate();
-									// can no longer guarantee this file is registered with this server so unregister it
-									forciblyUnregisterFile(file);
-								}
-								else {
-									dbConnection.prepareStatement("COMMIT").executeUpdate();
-									fileAndCounter.timeHeartbeatLastUpdated = System.currentTimeMillis();
-									logger.debug("Updated heartbeat timestamp for file with id "+file.getId()+".");
-								}
-								s.close();
-							}
-						
-						} catch (SQLException e) {
-							logger.error("SQLException occurred when updating heartbeat timestamp for file with id "+file.getId()+".");
-							e.printStackTrace();
-							try {
-								dbConnection.prepareStatement("ROLLBACK").executeUpdate();
-							} catch (SQLException e1) {
-								logger.debug("Transaction for updating heartbeat timestamps failed to be rolled back. This is possible if the reason is that the transaction failed to start in the first place.");
-							}
-							
-							// can no longer guarantee this file is registered with this server so unregister it
+				synchronized(lock1) {
+					
+					Connection dbConnection = DbHelper.getMainDb().getConnection();
+					for (FileAndCounter fileAndCounter : files) {
+						File file = fileAndCounter.getFile();
+					
+						if (dbConnection == null) {
+							// error connecting to database
+							// therefore can't update timestamp so can't guarantee this file is only registered with this server so forcivly unregister it
 							forciblyUnregisterFile(file);
 						}
+						else {
+							boolean unregisterFile = false;
+							try {
+								dbConnection.prepareStatement("START TRANSACTION").executeUpdate();
+								// first get an exclusive lock on the file record
+								PreparedStatement s = dbConnection.prepareStatement("SELECT heartbeat FROM files WHERE id=? FOR UPDATE");
+								s.setInt(1, file.getId());
+								s.executeQuery();
+								ResultSet r = s.getResultSet();
+								if (!r.next()) {
+									// couldn't find the record for some reason
+									// unregister the file
+									logger.warn("Attempting to update timestamp for file with id "+file.getId()+" but could not find record.");
+									unregisterFile = true;
+								}
+								s.close();
+								
+								// now that we have an exclusive lock check to see if it has been too long since the last update.
+								// need to use the time locally that we last updated not the one in the record we just received because if has been too long, that time might have been updated somewhere else
+								// if this is the case unregister the file
+								if (fileAndCounter.timeHeartbeatLastUpdated != null && fileAndCounter.timeHeartbeatLastUpdated + updateInterval < System.currentTimeMillis()) {
+									// the update interval has passed since the last update so it can no longer be guarenteed that another server hasn't picked up the file.
+									unregisterFile = true;
+								}
+								
+								if (unregisterFile) {
+									forciblyUnregisterFile(file);
+									dbConnection.prepareStatement("ROLLBACK").executeUpdate();
+								}
+								else {
+									// now that we have an exclusive lock we can be confident that this query will execute pretty instantly and therefore the time will be accurate.
+									// if we didn't get the lock above then this update command would need to get an exclusive lock, which could take some time, meaning then when it gets the lock the time that would be written would be old
+									// whenever a server tries to register a file they first request an exclusive lock on the record.
+									// provided that all requests to the mysql server with exclusive locks are handled in the order that the locks were requested, there should be no issues
+									Timestamp currentTimestamp = new Timestamp(System.currentTimeMillis());
+									s = dbConnection.prepareStatement("UPDATE files SET heartbeat=? WHERE id=?");
+									s.setTimestamp(1, currentTimestamp);
+									s.setInt(2, file.getId());
+									if (s.executeUpdate() != 1) {
+										logger.error("Error occurred when updating heartbeat timestamp for file with id "+file.getId()+".");
+										dbConnection.prepareStatement("ROLLBACK").executeUpdate();
+										// can no longer guarantee this file is registered with this server so unregister it
+										forciblyUnregisterFile(file);
+									}
+									else {
+										dbConnection.prepareStatement("COMMIT").executeUpdate();
+										fileAndCounter.timeHeartbeatLastUpdated = System.currentTimeMillis();
+										logger.debug("Updated heartbeat timestamp for file with id "+file.getId()+".");
+									}
+									s.close();
+								}
+							
+							} catch (SQLException e) {
+								logger.error("SQLException occurred when updating heartbeat timestamp for file with id "+file.getId()+".");
+								e.printStackTrace();
+								try {
+									dbConnection.prepareStatement("ROLLBACK").executeUpdate();
+								} catch (SQLException e1) {
+									logger.debug("Transaction for updating heartbeat timestamps failed to be rolled back. This is possible if the reason is that the transaction failed to start in the first place.");
+								}
+								
+								// can no longer guarantee this file is registered with this server so unregister it
+								forciblyUnregisterFile(file);
+							}
+						}
+					}
+					if (dbConnection != null) {
 						try {
 							dbConnection.close();
 						} catch (SQLException e) {
@@ -343,10 +353,15 @@ public class HeartbeatManager {
 						}
 					}
 				}
+				logger.debug("Finished updating heartbeat timestamps.");
 			}
-			logger.debug("Finished updating heartbeat timestamps.");
+			catch(Exception e) {
+				// if there is an exception that has not been handled occuring in the heartbeat task then regard this as fatal and terminate the app.
+				e.printStackTrace();
+				logger.fatal("An exception occurred in the heartbeat timer task and therefore the application is being terminated.");
+				System.exit(1);
+			}
 		}
-		
 	}
 	
 	private class FileAndCounter {
