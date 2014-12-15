@@ -6,6 +6,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.log4j.Logger;
@@ -78,6 +79,21 @@ public class File {
 		
 		logger.info("Started processing file with id "+getId()+" and name '"+getName()+"'.");
 		DbHelper.updateStatus(dbConnection, getId(), "Started processing.", null);
+		
+		{
+			// update the process start time in the database
+			try {
+				PreparedStatement s = dbConnection.prepareStatement("UPDATE files SET process_start_time=? WHERE id=?");
+				s.setTimestamp(1, new Timestamp(System.currentTimeMillis()));
+				s.setInt(2, getId());
+				if (s.executeUpdate() != 1) {
+					logger.error("There was an error updating the process_start_time for file with id "+getId()+".");
+				}
+			} catch (SQLException e) {
+				logger.error("SQLException when trying to update process_start_time.");
+				e.printStackTrace();
+			}
+		}
 		
 		String fileWorkingDir = FileHelper.getFileWorkingDir(getId());
 		String sourceFilePath = FileHelper.getSourcePendingFilePath(getId());
@@ -272,6 +288,22 @@ public class File {
 				logger.error("Error removing files working directory.");
 			}
 		}
+		
+		{
+			// update the process end time in the database
+			try {
+				PreparedStatement s = dbConnection.prepareStatement("UPDATE files SET process_end_time=? WHERE id=?");
+				s.setTimestamp(1, new Timestamp(System.currentTimeMillis()));
+				s.setInt(2, getId());
+				if (s.executeUpdate() != 1) {
+					logger.error("There was an error updating the process_end_time for file with id "+getId()+".");
+				}
+			} catch (SQLException e) {
+				logger.error("SQLException when trying to update process_end_time.");
+				e.printStackTrace();
+			}
+		}
+		
 		logger.info("Finished processing file with id "+getId()+" and name '"+getName()+"'.");
 	}
 }

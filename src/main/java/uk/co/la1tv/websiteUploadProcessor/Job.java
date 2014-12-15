@@ -1,9 +1,13 @@
 package uk.co.la1tv.websiteUploadProcessor;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
 
 
+
+
+import java.sql.Timestamp;
 
 import uk.co.la1tv.websiteUploadProcessor.helpers.DbHelper;
 
@@ -26,6 +30,7 @@ public class Job implements Runnable {
 	public void run() {
 		// switch the lock object on the file to the reference to the current thread
 		HeartbeatManager.getInstance().switchLockObj(file, initialHeartbeatManagerFileLockObj);
+		
 		file.process(dbConnection);
 		try {
 			dbConnection.close();
