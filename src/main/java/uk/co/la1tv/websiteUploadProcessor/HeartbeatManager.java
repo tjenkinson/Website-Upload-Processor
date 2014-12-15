@@ -271,7 +271,8 @@ public class HeartbeatManager {
 				synchronized(lock1) {
 					
 					Connection dbConnection = DbHelper.getMainDb().getConnection();
-					for (FileAndCounter fileAndCounter : files) {
+					// loop over a clone of the list so that items can be removed from actual list without concurrency exceptions
+					for (FileAndCounter fileAndCounter : new HashSet<FileAndCounter>(files)) {
 						File file = fileAndCounter.getFile();
 					
 						if (dbConnection == null) {
