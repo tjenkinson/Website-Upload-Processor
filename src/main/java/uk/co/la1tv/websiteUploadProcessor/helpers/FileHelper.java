@@ -75,14 +75,24 @@ public class FileHelper {
 	
 	public static boolean moveToWebApp(File source, int id) {
 		File destinationLocation = new File(FileHelper.format(Config.getInstance().getString("files.webappFilesLocation")+"/"+id));
-		destinationLocation.delete(); // delete file at destination (if there is one)
+		return moveFile(source, destinationLocation);
+	}
+	
+	public static boolean moveFromWebAppToPendingFiles(int id) {
+		File source = new File(FileHelper.format(Config.getInstance().getString("files.webappFilesLocation")+"/"+id));
+		File destinationLocation = new File(FileHelper.format(Config.getInstance().getString("files.webappPendingFilesLocation")+"/"+id));
+		return moveFile(source, destinationLocation);
+	}
+	
+	private static boolean moveFile(File source, File destination) {
+		destination.delete(); // delete file at destination (if there is one)
 		
-		// this was originally a source.renameTo(destinationLocation) to move the file but this wasn't working when the storage directory was on a different drive for some reason. The copy then delete does. Probably down to this: http://stackoverflow.com/a/300562/1048589 ("File.renameTo generally works only on the same file system volume. I think of this as the equivalent to a "mv" command. Use it if you can, but for general copy and move support, you'll need to have a fallback.")
-		// first copy the file to the web app directory
+		// this was originally a source.renameTo(destination) to move the file but this wasn't working when the storage directory was on a different drive for some reason. The copy then delete does. Probably down to this: http://stackoverflow.com/a/300562/1048589 ("File.renameTo generally works only on the same file system volume. I think of this as the equivalent to a "mv" command. Use it if you can, but for general copy and move support, you'll need to have a fallback.")
+		// first copy the file
 		try {
-			FileUtils.copyFile(source, destinationLocation);
+			FileUtils.copyFile(source, destination);
 		} catch (IOException e) {
-			logger.error("Exception when trying to move a file to the web app.");
+			logger.error("Exception when trying to move a file.");
 			e.printStackTrace();
 			return false;
 		}
