@@ -64,6 +64,7 @@ public class JobPoller {
 					logger.warn("Can't poll for files to be processed or updated at the moment as can't connect to database.");
 					return;
 				}
+				handleFilesForReprocessing(dbConnection);
 				deleteFiles(dbConnection);
 				processFiles(dbConnection);
 				try {
@@ -100,14 +101,24 @@ public class JobPoller {
 					
 					Object heartbeatManagerFileLockObj = new Object();
 					
-					if (!heartbeatManager.registerFile(file, false, heartbeatManagerFileLockObj)) {
-						logger.info("File with id "+file.getId()+" will not be processed because it's heartbeat was updated somewhere else.");
-						continue;
+					Job job = null;
+					try {
+						if (!heartbeatManager.registerFile(file, false, heartbeatManagerFileLockObj)) {
+							logger.info("File with id "+file.getId()+" will not be processed because it's heartbeat was updated somewhere else.");
+							continue;
+						}
+						
+						DbHelper.updateStatus(dbConnection, file.getId(), "Added to process queue.", null);
+						
+						filesInProgress.add(file);
+						job = new Job(taskCompletionHandler, file, heartbeatManagerFileLockObj);
 					}
-					
-					DbHelper.updateStatus(dbConnection, file.getId(), "Added to process queue.", null);
-					filesInProgress.add(file);
-					threadPool.execute(new Job(taskCompletionHandler, file, heartbeatManagerFileLockObj));
+					catch(Exception e) {
+						// an exception occurred so unregister the file and then rethrow the exception.
+						heartbeatManager.unRegisterFile(file);
+						throw(e);
+					}
+					threadPool.execute(job);
 					logger.info("Created and scheduled process job for file with id "+r.getInt("id")+".");
 				}
 				s.close();
@@ -116,6 +127,81 @@ public class JobPoller {
 				e.printStackTrace();
 			}
 			logger.info("Finished polling for files that need processing.");
+		}
+		
+		// first look for files with the reprocess flag set and a process_state of 1, and set the process_state to 3 which means prepare for reprocessing, and set the reprocess flag back to 0
+		
+		// find files with a process_state of 3. if this is the case attempt to delete all child files and set the process_state back to 0 so it will be picked up again, or leave it set to 3 if some of this fails
+		private void handleFilesForReprocessing(Connection dbConnection) {
+			logger.info("Looking for files that are set to be reprocessed.");
+			try {
+				// first look for files that have the reprocess flag set and process_state as 1 and update their process_state and reset the flag
+				PreparedStatement s = dbConnection.prepareStatement("UPDATE files SET process_state=3, reprocess=0 WHERE reprocess=1 AND process_state=1"+getFileTypeIdsWhereString("file_type_id"));
+				int i = 1;
+				for (FileType a : FileType.values()) {
+					s.setInt(i++, a.getObj().getId());
+				}
+				s.executeUpdate();
+			} catch (SQLException e) {
+				logger.error("SQLException when trying to update process_state for file files that have reprocess flag set.");
+				e.printStackTrace();
+			}
+			
+			try {
+				// go through all files with a process_state of 3 an attempt to delete their child files. if this is successful then set the process_state back to 0 so it can be processed again
+				PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE ((heartbeat IS NULL OR heartbeat<?) AND process_state=3)"+getFileTypeIdsWhereString("file_type_id"));
+				int i = 1;
+				s.setTimestamp(i++, heartbeatManager.getProcessingFilesTimestamp());
+				for (FileType a : FileType.values()) {
+					s.setInt(i++, a.getObj().getId());
+				}
+				ResultSet r = s.executeQuery();
+				
+				while(r.next()) {
+					File file = DbHelper.buildFileFromResult(r);
+					logger.info("Found file with id "+file.getId()+" that wants reprocessing.");
+					if (!HeartbeatManager.getInstance().registerFile(file)) {
+						logger.info("File with id "+file.getId()+" cannot be reprocessed now as it is being used somewhere else.");
+						continue;
+					}
+					try {
+						logger.info("Attempting to remove any child files it has.");
+						if (!removeChildFilesAndRecords(dbConnection, file, false)) {
+							logger.warn("Some child files could not be removed for some reason. Not resetting process_state to 0.");
+						}
+						else {
+							// move the source file back to the pending files folder.
+							if (!FileHelper.moveFromWebAppToPendingFiles(file.getId())) {
+								logger.error("There was an error when trying to move file with id "+file.getId()+" back to the pending files folder.");
+							}
+							else {
+							
+								// set process_state to 0 so that it will be picked up for processing again
+								s = dbConnection.prepareStatement("UPDATE files SET process_state=0 WHERE id=?");
+								s.setInt(1, file.getId());
+								if (s.executeUpdate() != 1) {
+									logger.error("There was an error setting the process_state for file with id "+file.getId()+".");
+								}
+								
+								DbHelper.updateStatus(dbConnection, file.getId(), "Waiting to be reprocessed.", null);
+								logger.info("File with id "+file.getId()+" is now ready for reprocessing.");
+							}
+						}
+						HeartbeatManager.getInstance().unRegisterFile(file);
+					}
+					catch(Exception e) {
+						// an exception occurred so unregister the file and then rethrow the exception.
+						HeartbeatManager.getInstance().unRegisterFile(file);
+						throw(e);
+					}
+				}
+				s.close();
+			} catch (SQLException e) {
+				logger.error("SQLException when trying setup a file for reprocessing.");
+				e.printStackTrace();
+			}
+			
+			logger.info("Finished looking for files that are set to be reprocessed.");
 		}
 		
 		// look for files that are pending deletion, or temporary and no longer belong to a session, and delete them.
@@ -181,126 +267,132 @@ public class JobPoller {
 				return false;
 			}
 			
-			boolean sourceFileMarkedForDeletion = false;
+			boolean allFilesDeletedSuccesfully = true;
 			
-			// delete actual files
-			
-			{
-				if (removeSourceFile) {
-					// set the ready_for_delete flag to 1 so that if some of the child files fail to be deleted, or this file, apps can still know that this is pending deletion and may be missing some child files, and should not be used
-					// if the ready_for_delete flag is set then apps should treat this as though the file has already been deleted
-					try {
-						dbConnection.prepareStatement("START TRANSACTION").executeUpdate();
-						PreparedStatement s = dbConnection.prepareStatement("SELECT ready_for_delete FROM files WHERE id=? FOR UPDATE");
-						s.setInt(1, sourceFile.getId());
-						s.executeQuery();
-						ResultSet r = s.getResultSet();
-						if (r.next()) {
-							// record exists and now have lock
-							if (!r.getBoolean("ready_for_delete")) {
-								// this is not marked for deletion. Mark it
-								s = dbConnection.prepareStatement("UPDATE files SET ready_for_delete=1 WHERE id=?");
-								s.setInt(1, sourceFile.getId());
-								if (s.executeUpdate() == 1) {
-									sourceFileMarkedForDeletion = true;
+			try {
+				boolean sourceFileMarkedForDeletion = false;
+				
+				// delete actual files
+				
+				{
+					if (removeSourceFile) {
+						// set the ready_for_delete flag to 1 so that if some of the child files fail to be deleted, or this file, apps can still know that this is pending deletion and may be missing some child files, and should not be used
+						// if the ready_for_delete flag is set then apps should treat this as though the file has already been deleted
+						try {
+							dbConnection.prepareStatement("START TRANSACTION").executeUpdate();
+							PreparedStatement s = dbConnection.prepareStatement("SELECT ready_for_delete FROM files WHERE id=? FOR UPDATE");
+							s.setInt(1, sourceFile.getId());
+							s.executeQuery();
+							ResultSet r = s.getResultSet();
+							if (r.next()) {
+								// record exists and now have lock
+								if (!r.getBoolean("ready_for_delete")) {
+									// this is not marked for deletion. Mark it
+									s = dbConnection.prepareStatement("UPDATE files SET ready_for_delete=1 WHERE id=?");
+									s.setInt(1, sourceFile.getId());
+									if (s.executeUpdate() == 1) {
+										sourceFileMarkedForDeletion = true;
+									}
+									else {
+										logger.error("There was an error trying to update ready_for_delete for source file with id "+sourceFile.getId()+".");
+									}
 								}
 								else {
-									logger.error("There was an error trying to update ready_for_delete for source file with id "+sourceFile.getId()+".");
+									sourceFileMarkedForDeletion = true;
 								}
 							}
 							else {
-								sourceFileMarkedForDeletion = true;
+								logger.error("Could not mark source file with id "+sourceFile.getId()+" for deletion because it couldn't be found!");
 							}
+							dbConnection.prepareStatement("COMMIT").executeUpdate();
 						}
-						else {
-							logger.error("Could not mark source file with id "+sourceFile.getId()+" for deletion because it couldn't be found!");
+						catch(SQLException e) {
+							logger.error("An SQLException occurred whilst trying to mark file record with id "+sourceFile.getId()+" for deletion.");
 						}
-						dbConnection.prepareStatement("COMMIT").executeUpdate();
-					}
-					catch(SQLException e) {
-						logger.error("An SQLException occurred whilst trying to mark file record with id "+sourceFile.getId()+" for deletion.");
-					}
-				}
-			}
-			
-			boolean allFilesDeletedSuccesfully = true;
-			
-			if (!removeSourceFile || sourceFileMarkedForDeletion) {
-			
-				{
-					try {
-						PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE (heartbeat IS NULL OR heartbeat<?) AND source_file_id=?");
-						s.setTimestamp(1, heartbeatManager.getProcessingFilesTimestamp());
-						s.setInt(2, sourceFile.getId());
-						ResultSet r = s.executeQuery();
-						
-						while(r.next()) {
-							// create File obj
-							File file = DbHelper.buildFileFromResult(r);
-							// remove this files child files, then the file itself (if deleting all the child files is successful)
-							if (!removeChildFilesAndRecords(dbConnection, file, true)) {
-								// returns false if one or more files out of the current one or its descendants could not be removed.
-								logger.error("An error occurred when trying to remove file with id "+file.getId()+" and any child files it has.");
-								allFilesDeletedSuccesfully = false;
-							}
-						}
-						s.close();
-					} catch (SQLException e) {
-						e.printStackTrace();
-						logger.error("SQLException when trying to query databases for files that need deleting.");
-						allFilesDeletedSuccesfully = false;
 					}
 				}
 				
-				{
-					if (removeSourceFile && allFilesDeletedSuccesfully) {
-						//all child files removed successfully. now remove source
-						allFilesDeletedSuccesfully = false;
-						
-						String sourceFilePath = FileHelper.getSourceFilePath(sourceFile.getId());
-						String sourcePendingFilePath = FileHelper.getSourcePendingFilePath(sourceFile.getId());
-						// presume if the file can't be found in the main folder it's in pending instead.
-						String actualSourceFilePath = Files.exists(Paths.get(sourceFilePath), LinkOption.NOFOLLOW_LINKS) ? sourceFilePath : sourcePendingFilePath;
-						
-						// delete file
-						boolean fileDeleted = false;
+				if (!removeSourceFile || sourceFileMarkedForDeletion) {
+				
+					{
 						try {
-							if (Files.exists(Paths.get(actualSourceFilePath), LinkOption.NOFOLLOW_LINKS)) {
-								FileUtils.forceDelete(new java.io.File(actualSourceFilePath));
-								if (!Files.exists(Paths.get(actualSourceFilePath), LinkOption.NOFOLLOW_LINKS)) {
-									// file no longer exists
-									logger.debug("Deleted file with id "+sourceFile.getId()+".");
-									fileDeleted = true;
+							PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE (heartbeat IS NULL OR heartbeat<?) AND source_file_id=?");
+							s.setTimestamp(1, heartbeatManager.getProcessingFilesTimestamp());
+							s.setInt(2, sourceFile.getId());
+							ResultSet r = s.executeQuery();
+							
+							while(r.next()) {
+								// create File obj
+								File file = DbHelper.buildFileFromResult(r);
+								// remove this files child files, then the file itself (if deleting all the child files is successful)
+								if (!removeChildFilesAndRecords(dbConnection, file, true)) {
+									// returns false if one or more files out of the current one or its descendants could not be removed.
+									logger.error("An error occurred when trying to remove file with id "+file.getId()+" and any child files it has.");
+									allFilesDeletedSuccesfully = false;
 								}
 							}
-							else {
-								logger.debug("File with id "+sourceFile.getId()+" could not be deleted because it doesn't exist! Just removing record. This is possible if a file failed to copy accross after it's record was created.");
-								fileDeleted = true;
-							}
-						} catch (IOException e) {
-							logger.error("Error deleting file with id "+sourceFile.getId()+".");
+							s.close();
+						} catch (SQLException e) {
+							e.printStackTrace();
+							logger.error("SQLException when trying to query databases for files that need deleting.");
+							allFilesDeletedSuccesfully = false;
 						}
-						
-						if (fileDeleted) {
+					}
+					
+					{
+						if (removeSourceFile && allFilesDeletedSuccesfully) {
+							//all child files removed successfully. now remove source
+							allFilesDeletedSuccesfully = false;
+							
+							String sourceFilePath = FileHelper.getSourceFilePath(sourceFile.getId());
+							String sourcePendingFilePath = FileHelper.getSourcePendingFilePath(sourceFile.getId());
+							// presume if the file can't be found in the main folder it's in pending instead.
+							String actualSourceFilePath = Files.exists(Paths.get(sourceFilePath), LinkOption.NOFOLLOW_LINKS) ? sourceFilePath : sourcePendingFilePath;
+							
+							// delete file
+							boolean fileDeleted = false;
 							try {
-								PreparedStatement s = dbConnection.prepareStatement("DELETE FROM files WHERE id=?");
-								s.setInt(1, sourceFile.getId());
-								if (s.executeUpdate() != 1) {
-									logger.error("Error occurred whilst deleting file record with id "+sourceFile.getId()+".");
+								if (Files.exists(Paths.get(actualSourceFilePath), LinkOption.NOFOLLOW_LINKS)) {
+									FileUtils.forceDelete(new java.io.File(actualSourceFilePath));
+									if (!Files.exists(Paths.get(actualSourceFilePath), LinkOption.NOFOLLOW_LINKS)) {
+										// file no longer exists
+										logger.debug("Deleted file with id "+sourceFile.getId()+".");
+										fileDeleted = true;
+									}
 								}
 								else {
-									// the file and record have now been removed
-									allFilesDeletedSuccesfully = true;
+									logger.debug("File with id "+sourceFile.getId()+" could not be deleted because it doesn't exist! Just removing record. This is possible if a file failed to copy accross after it's record was created.");
+									fileDeleted = true;
 								}
-							} catch (SQLException e) {
-								logger.error("SQLException when trying to query databases for files that need deleting.");
+							} catch (IOException e) {
+								logger.error("Error deleting file with id "+sourceFile.getId()+".");
+							}
+							
+							if (fileDeleted) {
+								try {
+									PreparedStatement s = dbConnection.prepareStatement("DELETE FROM files WHERE id=?");
+									s.setInt(1, sourceFile.getId());
+									if (s.executeUpdate() != 1) {
+										logger.error("Error occurred whilst deleting file record with id "+sourceFile.getId()+".");
+									}
+									else {
+										// the file and record have now been removed
+										allFilesDeletedSuccesfully = true;
+									}
+								} catch (SQLException e) {
+									logger.error("SQLException when trying to query databases for files that need deleting.");
+								}
 							}
 						}
 					}
 				}
+				heartbeatManager.unRegisterFile(sourceFile);
 			}
-			
-			heartbeatManager.unRegisterFile(sourceFile);
+			catch(Exception e) {
+				// an exception occurred so unregister the file and then rethrow the exception.
+				heartbeatManager.unRegisterFile(sourceFile);
+				throw(e);
+			}
 			return allFilesDeletedSuccesfully;
 		}
 	}

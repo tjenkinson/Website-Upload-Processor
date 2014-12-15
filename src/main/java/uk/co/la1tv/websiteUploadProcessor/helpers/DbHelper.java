@@ -4,14 +4,17 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-
 import java.sql.Types;
+
+import org.apache.log4j.Logger;
 
 import uk.co.la1tv.websiteUploadProcessor.Db;
 import uk.co.la1tv.websiteUploadProcessor.File;
 import uk.co.la1tv.websiteUploadProcessor.fileTypes.FileType;
 
 public class DbHelper {
+	
+	private static Logger logger = Logger.getLogger(DbHelper.class);
 	
 	private static Db db = null;
 	
@@ -67,7 +70,8 @@ public class DbHelper {
 			s.close();
 			return result;
 		} catch (SQLException e) {
-			throw(new RuntimeException("Database error whilst trying to update process status."));
+			logger.warn("SQLException when trying to update status.");
+			return false;
 		}
 	}
 	
