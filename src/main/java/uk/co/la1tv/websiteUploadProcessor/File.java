@@ -71,7 +71,7 @@ public class File {
 		
 		Config config = Config.getInstance();
 		// used to signify error if problem copying file from pending files locatioon to server (if working with copy) or if there was a problem moving the source fie from the pending directory to the main files directory.
-		boolean errorMovingSourceFile = false;
+		boolean errorCopyingSourceFile = false;
 		// true if the webapp folder is over quota meaning the job should be failed.
 		boolean overQuota = FileHelper.isOverQuota();
 		boolean workingDirCreated = false;
@@ -96,7 +96,7 @@ public class File {
 		}
 		
 		String fileWorkingDir = FileHelper.getFileWorkingDir(getId());
-		String sourceFilePath = FileHelper.getSourcePendingFilePath(getId());
+		String sourceFilePath = FileHelper.getSourceFilePath(getId());
 		// the path to file that will be processed. (It might be copied to the working dir so this will be different to sourceFilePath)
 		String destinationSourceFilePath = fileWorkingDir;
 		
@@ -118,14 +118,14 @@ public class File {
 					FileUtils.copyFile(new java.io.File(sourceFilePath), new java.io.File(destinationSourceFilePath));
 					logger.debug("Copied file with id "+getId()+" to working directory.");
 				} catch (IOException e) {
-					errorMovingSourceFile = true;
+					errorCopyingSourceFile = true;
 					logger.error("Error copying file with id "+getId()+" from web app files location to working directory.");
 					e.printStackTrace();
 				}
 			}
 		}
 		
-		if (!errorMovingSourceFile && !overQuota) {
+		if (!errorCopyingSourceFile && !overQuota) {
 			info = type.process(dbConnection, new java.io.File(destinationSourceFilePath), new java.io.File(fileWorkingDir), this);
 		}
 		
@@ -141,7 +141,7 @@ public class File {
 			logger.warn("An error occurred when trying to process file with id "+getId()+".");
 		}
 		
-		if (!errorMovingSourceFile) {
+		if (!errorCopyingSourceFile) {
 			
 			java.io.File sourceFile = new java.io.File(sourceFilePath);
 			
@@ -154,23 +154,15 @@ public class File {
 				}
 			}
 			
-			// move source file from pending folder to main files folder if processing was successful, otherwise remove source file
-			if (info.success) {
-				// move file from pending to main folder
-				if (!FileHelper.moveToWebApp(sourceFile, getId())) {
-					logger.error("An error occurred trying to move the source file with id "+getId()+" from the pending folder to the main folder.");
-					errorMovingSourceFile = true;
-				}
-			}
-			else {
-				// delete file from pending
+			if (!info.success) {
+				// the processing failed so remove the source file. no point keeping it if an error occurred
 				if (!sourceFile.delete()) {
-					logger.warn("Failed to delete file with it "+getId()+" from pending directory as it failed processing. It might have failed proecssing because it was missing for some reason so this might be ok.");
+					logger.warn("Failed to delete file with it "+getId()+" as it failed processing. It might have failed proecssing because it was missing for some reason so this might be ok.");
 				}
 			}
 		}
 		
-		if (!errorMovingSourceFile) {
+		if (!errorCopyingSourceFile) {
 			// update process_state in db and mark files as in_use
 			logger.debug("Updating process_state in database...");
 			try {

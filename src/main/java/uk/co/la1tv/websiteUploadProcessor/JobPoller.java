@@ -116,6 +116,7 @@ public class JobPoller {
 					catch(Exception e) {
 						// an exception occurred so unregister the file and then rethrow the exception.
 						heartbeatManager.unRegisterFile(file);
+						filesInProgress.remove(file);
 						throw(e);
 					}
 					threadPool.execute(job);
@@ -170,22 +171,15 @@ public class JobPoller {
 							logger.warn("Some child files could not be removed for some reason. Not resetting process_state to 0.");
 						}
 						else {
-							// move the source file back to the pending files folder.
-							if (!FileHelper.moveFromWebAppToPendingFiles(file.getId())) {
-								logger.error("There was an error when trying to move file with id "+file.getId()+" back to the pending files folder.");
+							// set process_state to 0 so that it will be picked up for processing again
+							s = dbConnection.prepareStatement("UPDATE files SET process_state=0 WHERE id=?");
+							s.setInt(1, file.getId());
+							if (s.executeUpdate() != 1) {
+								logger.error("There was an error setting the process_state for file with id "+file.getId()+".");
 							}
-							else {
 							
-								// set process_state to 0 so that it will be picked up for processing again
-								s = dbConnection.prepareStatement("UPDATE files SET process_state=0 WHERE id=?");
-								s.setInt(1, file.getId());
-								if (s.executeUpdate() != 1) {
-									logger.error("There was an error setting the process_state for file with id "+file.getId()+".");
-								}
-								
-								DbHelper.updateStatus(dbConnection, file.getId(), "Waiting to be reprocessed.", null);
-								logger.info("File with id "+file.getId()+" is now ready for reprocessing.");
-							}
+							DbHelper.updateStatus(dbConnection, file.getId(), "Waiting to be reprocessed.", null);
+							logger.info("File with id "+file.getId()+" is now ready for reprocessing.");
 						}
 						HeartbeatManager.getInstance().unRegisterFile(file);
 					}
@@ -345,16 +339,13 @@ public class JobPoller {
 							allFilesDeletedSuccesfully = false;
 							
 							String sourceFilePath = FileHelper.getSourceFilePath(sourceFile.getId());
-							String sourcePendingFilePath = FileHelper.getSourcePendingFilePath(sourceFile.getId());
-							// presume if the file can't be found in the main folder it's in pending instead.
-							String actualSourceFilePath = Files.exists(Paths.get(sourceFilePath), LinkOption.NOFOLLOW_LINKS) ? sourceFilePath : sourcePendingFilePath;
 							
 							// delete file
 							boolean fileDeleted = false;
 							try {
-								if (Files.exists(Paths.get(actualSourceFilePath), LinkOption.NOFOLLOW_LINKS)) {
-									FileUtils.forceDelete(new java.io.File(actualSourceFilePath));
-									if (!Files.exists(Paths.get(actualSourceFilePath), LinkOption.NOFOLLOW_LINKS)) {
+								if (Files.exists(Paths.get(sourceFilePath), LinkOption.NOFOLLOW_LINKS)) {
+									FileUtils.forceDelete(new java.io.File(sourceFilePath));
+									if (!Files.exists(Paths.get(sourceFilePath), LinkOption.NOFOLLOW_LINKS)) {
 										// file no longer exists
 										logger.debug("Deleted file with id "+sourceFile.getId()+".");
 										fileDeleted = true;
