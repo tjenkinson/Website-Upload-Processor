@@ -68,19 +68,9 @@ public class FileHelper {
 	public static String getSourceFilePath(int fileId) {
 		return FileHelper.format(Config.getInstance().getString("files.webappFilesLocation")+"/"+fileId);
 	}
-
-	public static String getSourcePendingFilePath(int d) {
-		return FileHelper.format(Config.getInstance().getString("files.webappPendingFilesLocation")+"/"+d);
-	}
 	
 	public static boolean moveToWebApp(File source, int id) {
 		File destinationLocation = new File(FileHelper.format(Config.getInstance().getString("files.webappFilesLocation")+"/"+id));
-		return moveFile(source, destinationLocation);
-	}
-	
-	public static boolean moveFromWebAppToPendingFiles(int id) {
-		File source = new File(FileHelper.format(Config.getInstance().getString("files.webappFilesLocation")+"/"+id));
-		File destinationLocation = new File(FileHelper.format(Config.getInstance().getString("files.webappPendingFilesLocation")+"/"+id));
 		return moveFile(source, destinationLocation);
 	}
 	
