@@ -21,7 +21,7 @@ public class HeartbeatManager {
 	
 	private final Timer timer;
 	private final Config config;
-	private final HashSet<FileAndCounter> files;
+	private final HashSet<FileAndLock> files;
 	private final long updateInterval;
 	private final Object lock1 = new Object();
 	private final int leewayTime = 10; // seconds
@@ -30,7 +30,7 @@ public class HeartbeatManager {
 		logger.info("Loading HeartbeatManager...");
 		config = Config.getInstance();
 		timer = new Timer(false);
-		files = new HashSet<FileAndCounter>();
+		files = new HashSet<FileAndLock>();
 		int proposedUpdateInterval = config.getInt("general.heartbeatInterval");
 		final int minumumUpdateInterval = 10+leewayTime;
 		if (proposedUpdateInterval < minumumUpdateInterval) {
@@ -70,12 +70,12 @@ public class HeartbeatManager {
 	// in this case bypassCheck must be true to actually get it registered so the timestamp is kept updated.
 	public boolean registerFile(File file, boolean bypassCheck, Object lockObj) {
 		synchronized(lock1) {
-			for(FileAndCounter fileAndCounter : files) {
-				if (fileAndCounter.getFile() == file) {
+			for(FileAndLock fileAndLock : files) {
+				if (fileAndLock.getFile() == file) {
 					// file already registered
-					if (fileAndCounter.hasMatchingLock(lockObj)) {
+					if (fileAndLock.hasMatchingLock(lockObj)) {
 						// increment the counter instead.
-						fileAndCounter.register();
+						fileAndLock.register();
 						return true;
 					}
 					else {
@@ -163,7 +163,7 @@ public class HeartbeatManager {
 				throw(new RuntimeException("Error trying to register a file with HeartbeatManager."));
 			}		
 
-			files.add(new FileAndCounter(file, lockObj));
+			files.add(new FileAndLock(file, lockObj));
 		}
 		logger.info("Registered file with id "+file.getId()+" with HeartbeatManager.");
 		return true;
@@ -176,10 +176,10 @@ public class HeartbeatManager {
 	// switch the lockobj that is currently associated with a registered file
 	public void switchLockObj(File file, Object currentLockObj, Object newLockObj) {
 		synchronized(lock1) {
-			for(FileAndCounter fileAndCounter : files) {
-				if (fileAndCounter.getFile() == file) {
-					if (fileAndCounter.hasMatchingLock(currentLockObj)) {
-						fileAndCounter.updateLockObj(newLockObj);
+			for(FileAndLock fileAndLock : files) {
+				if (fileAndLock.getFile() == file) {
+					if (fileAndLock.hasMatchingLock(currentLockObj)) {
+						fileAndLock.updateLockObj(newLockObj);
 						return;
 					}
 					else {
@@ -191,12 +191,14 @@ public class HeartbeatManager {
 		}
 	}
 	
-	// returns true of the file is currently registered with the heartbeat manager
+	// returns true of the file is currently registered with the heartbeat manager and has not been forcibly unregistered
+	// if the file has been forcibly unregistered this server should stop making any more changes. It will still keep the file registered locally as to prevent this server picking it up again until it has unregistered it
 	public boolean isFileRegistered(File file) {
+		// TODO: should do a lookup and check the timestamp again here. 
 		synchronized(lock1) {
-			for(FileAndCounter fileAndCounter : files) {
-				if (fileAndCounter.getFile() == file) {
-					return true;
+			for(FileAndLock fileAndLock : files) {
+				if (fileAndLock.getFile() == file) {
+					return !fileAndLock.getHasLostRegistration();
 				}
 			}
 			return false;
@@ -211,14 +213,19 @@ public class HeartbeatManager {
 	// if this file has been registered several times this will do nothing until called the last time
 	public void unRegisterFile(File file, Object lockObj) {
 		synchronized(lock1) {
-			for(FileAndCounter fileAndCounter : files) {
-				if (fileAndCounter.getFile() == file) {
-					if (fileAndCounter.hasMatchingLock(lockObj)) {
-						if (fileAndCounter.unRegister()) {
+			for(FileAndLock fileAndLock : files) {
+				if (fileAndLock.getFile() == file) {
+					if (fileAndLock.hasMatchingLock(lockObj)) {
+						if (fileAndLock.unRegister()) {
 							// the counter has reached 0 so the file should be completely unregistered now
 							// TODO: double check still have lock, then set the timestamp to NULL so that other servers can pick it up immediately. At the moment other servers have to wait for it to timeout
-							files.remove(fileAndCounter);
-							logger.info("Unregistered file with id "+file.getId()+" from heartbeat manager.");
+							files.remove(fileAndLock);
+							if (!fileAndLock.getHasLostRegistration()) {
+								logger.info("Unregistered file with id "+file.getId()+" from heartbeat manager.");
+							}
+							else {
+								logger.info("Unregistered file with id "+file.getId()+" from heartbeat manager, although this file has already been forcibly unregistered for some reason so might have already been registered by another server.");
+							}
 						}
 					}
 					else {
@@ -235,17 +242,12 @@ public class HeartbeatManager {
 	// the main program code should use isFileRegistered to check if the file is still registered before performing tasks which require exclusivity (probably whilst in a database transaction with an exclusive lock)
 	private void forciblyUnregisterFile(File file) {
 		synchronized(lock1) {
-			FileAndCounter toRemove = null;
-			for(FileAndCounter fileAndCounter : files) {
-				if (fileAndCounter.getFile() == file) {
-					toRemove = fileAndCounter;
+			for(FileAndLock fileAndLock : files) {
+				if (fileAndLock.getFile() == file) {
+					fileAndLock.markRegistrationLost();
+					logger.warn("Forcibly unregistered file with id "+file.getId()+" as can no longer guarantee exclusive access for some reason.");
 					break;
 				}
-			}
-			
-			if (toRemove != null) {
-				files.remove(toRemove);
-				logger.warn("Forcibly unregistered file with id "+file.getId()+" as can no longer guarantee exclusive access for some reason.");
 			}
 		}
 	}
@@ -272,8 +274,8 @@ public class HeartbeatManager {
 					
 					Connection dbConnection = DbHelper.getMainDb().getConnection();
 					// loop over a clone of the list so that items can be removed from actual list without concurrency exceptions
-					for (FileAndCounter fileAndCounter : new HashSet<FileAndCounter>(files)) {
-						File file = fileAndCounter.getFile();
+					for (FileAndLock fileAndLock : new HashSet<FileAndLock>(files)) {
+						File file = fileAndLock.getFile();
 					
 						if (dbConnection == null) {
 							// error connecting to database
@@ -300,7 +302,7 @@ public class HeartbeatManager {
 								// now that we have an exclusive lock check to see if it has been too long since the last update.
 								// need to use the time locally that we last updated not the one in the record we just received because if has been too long, that time might have been updated somewhere else
 								// if this is the case unregister the file
-								if (fileAndCounter.timeHeartbeatLastUpdated != null && fileAndCounter.timeHeartbeatLastUpdated + updateInterval < System.currentTimeMillis()) {
+								if (fileAndLock.timeHeartbeatLastUpdated != null && fileAndLock.timeHeartbeatLastUpdated + updateInterval < System.currentTimeMillis()) {
 									// the update interval has passed since the last update so it can no longer be guarenteed that another server hasn't picked up the file.
 									unregisterFile = true;
 								}
@@ -326,7 +328,7 @@ public class HeartbeatManager {
 									}
 									else {
 										dbConnection.prepareStatement("COMMIT").executeUpdate();
-										fileAndCounter.timeHeartbeatLastUpdated = System.currentTimeMillis();
+										fileAndLock.timeHeartbeatLastUpdated = System.currentTimeMillis();
 										logger.debug("Updated heartbeat timestamp for file with id "+file.getId()+".");
 									}
 									s.close();
@@ -365,14 +367,15 @@ public class HeartbeatManager {
 		}
 	}
 	
-	private class FileAndCounter {
+	private class FileAndLock {
 		private final File file;
 		private int counter = 1;
+		private boolean lostRegistration = false; // true if the registration has been lost for some reason and another server may now register the file
 		// an object reference which will be provided when the file is registered and only the same reference will work for unregistering
 		private Object lockObj;
 		public Long timeHeartbeatLastUpdated = null;
 
-		public FileAndCounter(File file, Object lockObj) {
+		public FileAndLock(File file, Object lockObj) {
 			this.file = file;
 			this.lockObj = lockObj;
 		}
@@ -388,6 +391,15 @@ public class HeartbeatManager {
 		
 		public void register() {
 			counter++;
+		}
+		
+		public void markRegistrationLost() {
+			lostRegistration = true;
+		}
+		
+		// true if the file has been forcibly unregistered, meaning another server may now have now registered this file.
+		public boolean getHasLostRegistration() {
+			return lostRegistration;
 		}
 		
 		public boolean unRegister() {
