@@ -10,5 +10,4 @@ ffmpeg.probeLocation =
 imagemagick.convertLocation = 
 imagemagick.identifyLocation = 
 files.webappFilesLocation = 
-files.webappPendingFilesLocation = 
 files.workingFilesLocation = # each server will create another directory in here which matches its id, and this will be the location where files are worked on
