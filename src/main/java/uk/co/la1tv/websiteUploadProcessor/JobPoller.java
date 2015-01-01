@@ -428,7 +428,6 @@ public class JobPoller {
 			e.printStackTrace();
 			logger.error("SQLException when trying to get the number of jobs running on the least loaded server.");
 		}
-		System.out.println("HELLO!!!! "+result); // TODO: remove
 		return result;
 	}
 	
