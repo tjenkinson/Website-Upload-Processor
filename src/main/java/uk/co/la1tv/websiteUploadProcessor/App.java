@@ -1,5 +1,7 @@
 package uk.co.la1tv.websiteUploadProcessor;
 
+import java.sql.SQLException;
+
 import org.apache.commons.configuration.ConfigurationException;
 import org.apache.log4j.Logger;
 import org.apache.log4j.PropertyConfigurator;
@@ -44,6 +46,9 @@ public class App {
 		
 		// connect to database and pass Db object to DbHelper so it can be retrieved from anywhere
 		DbHelper.setMainDb(new Db(config.getString("db.host"), config.getString("db.database"), config.getString("db.username"), config.getString("db.password")));
+		
+		// start the server heartbeat manager
+		new ServerHeartbeatManager();
 		
 		// start the job poller
 		new JobPoller();
