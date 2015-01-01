@@ -8,6 +8,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.util.LinkedHashSet;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -39,6 +40,7 @@ public class JobPoller {
 	private Timer timer;
 	private Config config;
 	private HeartbeatManager heartbeatManager;
+	private final int pollInterval;
 	
 	private Object lock1 = new Object();
 	
@@ -48,8 +50,9 @@ public class JobPoller {
 		threadPool = Executors.newFixedThreadPool(config.getInt("general.noThreads"));
 		taskCompletionHandler = new TaskCompletionHandler();
 		heartbeatManager = HeartbeatManager.getInstance();
+		pollInterval = config.getInt("general.pollInterval")*1000;
 		timer = new Timer(false);
-		timer.schedule(new PollTask(), 0, config.getInt("general.pollInterval")*1000);
+		timer.schedule(new PollTask(), 0, pollInterval);
 		logger.info("Job poller loaded.");
 	}
 	
@@ -93,8 +96,13 @@ public class JobPoller {
 					
 					// create File obj
 					File file = DbHelper.buildFileFromResult(r);
+					Integer numJobsOnLeastLoadedServer = getNumJobsOnLeastLoadedServer(dbConnection);
 					
-					if (filesInProgress.size() >= config.getInt("general.noThreads")) {
+					if (numJobsOnLeastLoadedServer != null && numJobsOnLeastLoadedServer < filesInProgress.size()) {
+						logger.info("File with id "+file.getId()+" will not be picked up on this server as there is another server which is currently processing fewer files, and therefore that should pick this up.");
+						continue;
+					}
+					else if (filesInProgress.size() >= config.getInt("general.noThreads")) {
 						logger.info("File with id "+file.getId()+" will not be picked up at the moment as there are no free threads available.");
 						continue;
 					}
@@ -109,6 +117,12 @@ public class JobPoller {
 						}
 						
 						DbHelper.updateStatus(dbConnection, file.getId(), "Added to process queue.", null);
+						
+						// now set the server_id field so that other servers can determine that this server is working on this file.
+						PreparedStatement s2 = dbConnection.prepareStatement("UPDATE files SET server_id=? WHERE id=?");
+						s2.setInt(1,  config.getInt("server.id"));
+						s2.setInt(2, file.getId());
+						s2.executeUpdate();
 						
 						filesInProgress.add(file);
 						job = new Job(taskCompletionHandler, file, heartbeatManagerFileLockObj);
@@ -149,8 +163,10 @@ public class JobPoller {
 			}
 			
 			try {
+				
 				// go through all files with a process_state of 3 an attempt to delete their child files. if this is successful then set the process_state back to 0 so it can be processed again
 				PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE ((heartbeat IS NULL OR heartbeat<?) AND process_state=3)"+getFileTypeIdsWhereString("file_type_id"));
+				
 				int i = 1;
 				s.setTimestamp(i++, heartbeatManager.getProcessingFilesTimestamp());
 				for (FileType a : FileType.values()) {
@@ -386,6 +402,33 @@ public class JobPoller {
 			}
 			return allFilesDeletedSuccesfully;
 		}
+	}
+	
+	/**
+	 * Returns the number of files that are currently being processed on the server which is currently
+	 * processing the least amount of files. Otherwise returns NULL if there are no other servers running, or could not get the result.
+	 * The current server is excluded from the check.
+	 * 
+	 * @return the number of files being processed or NULL
+	 */
+	private Integer getNumJobsOnLeastLoadedServer(Connection dbConnection) {
+		Integer result = null;
+		PreparedStatement s;
+		try {
+			s = dbConnection.prepareStatement("SELECT t.server_id AS server_id, t.number_jobs_in_progress AS number_jobs_in_progress FROM (SELECT count(*) AS number_jobs_in_progress, files.server_id AS server_id FROM files JOIN processing_servers on processing_servers.id = files.server_id WHERE processing_servers.id != ? AND processing_servers.heartbeat >= ? AND (files.heartbeat IS NOT NULL AND files.heartbeat>=?) AND files.process_state=0 GROUP BY files.server_id) AS t ORDER BY t.number_jobs_in_progress ASC");
+			s.setInt(1, config.getInt("server.id"));
+			s.setTimestamp(2, new Timestamp(System.currentTimeMillis() - pollInterval - 30000));
+			s.setTimestamp(3, heartbeatManager.getProcessingFilesTimestamp());
+			ResultSet r = s.executeQuery();
+			if (r.next()) {
+				result = r.getInt("number_jobs_in_progress");
+			}
+			s.close();
+		} catch (SQLException e) {
+			e.printStackTrace();
+			logger.error("SQLException when trying to get the number of jobs running on the least loaded server.");
+		}
+		return result;
 	}
 	
 	private class TaskCompletionHandler implements CompletionHandlerI {
