@@ -20,6 +20,7 @@ import uk.co.la1tv.websiteUploadProcessor.helpers.FfmpegHelper;
 import uk.co.la1tv.websiteUploadProcessor.helpers.FfmpegProgressMonitor;
 import uk.co.la1tv.websiteUploadProcessor.helpers.FileHelper;
 import uk.co.la1tv.websiteUploadProcessor.helpers.RuntimeHelper;
+import uk.co.la1tv.websiteUploadProcessor.helpers.VideoThumbnail;
 
 public class VODVideoFileType extends FileTypeAbstract {
 	
@@ -95,9 +96,6 @@ public class VODVideoFileType extends FileTypeAbstract {
 			formatsToRender.add(f);
 		}
 		
-		
-		ArrayList<OutputFile> outputFiles = new ArrayList<OutputFile>();
-		
 		final String renderRequiredFormatsMsg = "Rendering video into required formats.";
 		DbHelper.updateStatus(dbConnection, file.getId(), renderRequiredFormatsMsg, 0);
 		
@@ -154,46 +152,47 @@ public class VODVideoFileType extends FileTypeAbstract {
 		}
 		
 		
+		
+		
+		
+		// generate the thumbnails that will be shown as the user scrubs through the item in the player.
+		DbHelper.updateStatus(dbConnection, file.getId(), "Generating scrub thumbnails.", null);
+		VideoThumbnail[] thumbnails = FfmpegHelper.generateThumbnails(config.getInt("encoding.vodScrubThumbnails.numberPerItem"), source, workingDir, config.getInt("encoding.vodScrubThumbnails.width"), config.getInt("encoding.vodScrubThumbnails.height"));
+		if (thumbnails == null) {
+			logger.warn("There was an error generating video scrub thumbnails.");
+			returnVal.msg = "Error generating scrub thumbnails.";
+			return returnVal;
+		}
+		
+		for(VideoThumbnail thumbnail : thumbnails) {
+			totalSize.add(BigInteger.valueOf(thumbnail.getFile().length()));
+			if (FileHelper.isOverQuota(totalSize)) {
+				returnVal.msg = "Ran out of space.";
+				return returnVal;
+			}
+		}
+		
 		// this order is important to make sure if anything goes wrong there aren't any files left in the webapp files folder without a corresponding entry in the db		
 		// create entries in Files with in_use set to 0
 		// and copy files across to web app
-
 		DbHelper.updateStatus(dbConnection, file.getId(), "Finalizing renders.", null);
+		ArrayList<VideoOutputFile> videoOutputFiles = new ArrayList<VideoOutputFile>();
 		try {
 			for (Format f : formatsToRender) {
 				
-				long size = f.outputFile.length(); // size of file in bytes
-				
 				logger.debug("Creating file record for render with height "+f.h+" belonging to source file with id "+file.getId()+".");
-
-				Timestamp currentTimestamp = new Timestamp(System.currentTimeMillis());
-				PreparedStatement s = dbConnection.prepareStatement("INSERT INTO files (in_use,created_at,updated_at,size,file_type_id,source_file_id,heartbeat,process_state) VALUES(0,?,?,?,?,?,?,1)", Statement.RETURN_GENERATED_KEYS);
-				s.setTimestamp(1, currentTimestamp);
-				s.setTimestamp(2, currentTimestamp);
-				s.setLong(3, size);
-				s.setInt(4, FileType.VOD_VIDEO_RENDER.getObj().getId());
-				s.setInt(5, file.getId());
-				// so that nothing else will pick up this file and it can be registered with the heartbeat manager immediately
-				s.setTimestamp(6, currentTimestamp);
-				if (s.executeUpdate() != 1) {
-					s.close();
-					logger.warn("Error occurred when creating database entry for a file.");
+				File newFile = generateNewFile(file, f.outputFile, FileType.VOD_VIDEO_RENDER, dbConnection);
+				if (newFile == null) {
+					logger.warn("Error trying to generate file object for output file.");
 					return returnVal;
 				}
-				
-				ResultSet generatedKeys = s.getGeneratedKeys();
-				generatedKeys.next();
-				int id = generatedKeys.getInt(1);
-				s.close();
-				
-				File newFile = new File(id, null, size, FileType.VOD_VIDEO_RENDER.getObj());
 				// add to set of files to mark in_use when processing completed
 				if (!returnVal.registerNewFile(newFile)) {
 					// error occurred. abort
 					logger.warn("Error trying to register newly created file.");
 					return returnVal;
 				}
-				logger.debug("File record created with id "+id+" for render with height "+f.h+" belonging to source file with id "+file.getId()+".");
+				logger.debug("File record created with id "+newFile.getId()+" for render with height "+f.h+" belonging to source file with id "+file.getId()+".");
 				
 				
 				// add entry to OutputFiles array which will be used to populate VideoFiles table later
@@ -203,7 +202,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 					logger.warn("Error retrieving info for file rendered from source file with id "+file.getId()+".");
 					return returnVal;
 				}
-				outputFiles.add(new OutputFile(newFile.getId(), info.getW(), info.getH(), f.qualityDefinitionId));
+				videoOutputFiles.add(new VideoOutputFile(newFile.getId(), info.getW(), info.getH(), f.qualityDefinitionId));
 				
 				// copy file to server
 				logger.info("Moving output file with id "+newFile.getId()+" to web app...");
@@ -211,7 +210,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 					logger.error("Error trying to move output file with id "+newFile.getId()+" to web app.");
 					return returnVal;
 				}
-				logger.info("Output file with id "+newFile.getId()+" moved to web app.");
+				logger.info("Output video file with id "+newFile.getId()+" moved to web app.");
 			}
 		} catch (SQLException e) {
 			throw(new RuntimeException("Error trying to register files in database."));
@@ -220,7 +219,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 		try {
 			// create entries in video_files
 			logger.debug("Creating entries in video_files table...");
-			for (OutputFile o : outputFiles) {
+			for (VideoOutputFile o : videoOutputFiles) {
 				Timestamp currentTimestamp = new Timestamp(System.currentTimeMillis());
 				PreparedStatement s = dbConnection.prepareStatement("INSERT INTO video_files (width,height,created_at,updated_at,quality_definition_id,file_id) VALUES (?,?,?,?,?,?)");
 				s.setInt(1, o.w);
@@ -241,8 +240,95 @@ public class VODVideoFileType extends FileTypeAbstract {
 		} catch (SQLException e) {
 			throw(new RuntimeException("Error trying to create entries in video_files."));
 		}
+
+
+		DbHelper.updateStatus(dbConnection, file.getId(), "Finalizing scrub thumbnails.", null);
+		ArrayList<ThumbnailOutputFile> thumbnailOutputFiles = new ArrayList<ThumbnailOutputFile>();
+		try {
+			for (VideoThumbnail thumbnail : thumbnails) {
+				
+				logger.debug("Creating file record for thumbnail at time "+thumbnail.getTime()+" belonging to source file with id "+file.getId()+".");
+				File newFile = generateNewFile(file, thumbnail.getFile(), FileType.VOD_SCRUB_THUMBNAIL, dbConnection);
+				if (newFile == null) {
+					logger.warn("Error trying to generate file object for output file.");
+					return returnVal;
+				}
+				// add to set of files to mark in_use when processing completed
+				if (!returnVal.registerNewFile(newFile)) {
+					// error occurred. abort
+					logger.warn("Error trying to register newly created file.");
+					return returnVal;
+				}
+				logger.debug("File record created with id "+newFile.getId()+" for thumbnail at time "+thumbnail.getTime()+" belonging to source file with id "+file.getId()+".");
+				
+				thumbnailOutputFiles.add(new ThumbnailOutputFile(newFile.getId(), thumbnail));
+				
+				// copy file to server
+				logger.info("Moving output file with id "+newFile.getId()+" to web app...");
+				if (!FileHelper.moveToWebApp(thumbnail.getFile(), newFile.getId())) {
+					logger.error("Error trying to move output file with id "+newFile.getId()+" to web app.");
+					return returnVal;
+				}
+				
+				logger.info("Output thumbnail file with id "+newFile.getId()+" moved to web app.");
+			}
+		} catch (SQLException e) {
+			e.printStackTrace();
+			throw(new RuntimeException("Error trying to register files in database."));
+		}
+		
+		try {
+			// create entries in video_scrub_thumbnail_files
+			logger.debug("Creating entries in video_scrub_thumbnail_files table...");
+			for (ThumbnailOutputFile thumbnailOutputFile : thumbnailOutputFiles) {
+				VideoThumbnail thumbnail = thumbnailOutputFile.thumbnail;
+				Timestamp currentTimestamp = new Timestamp(System.currentTimeMillis());
+				PreparedStatement s = dbConnection.prepareStatement("INSERT INTO video_scrub_thumbnail_files (created_at,updated_at,time,file_id) VALUES (?,?,?,?)");
+				s.setTimestamp(1, currentTimestamp);
+				s.setTimestamp(2, currentTimestamp);
+				s.setInt(3, thumbnail.getTime());
+				s.setInt(4, thumbnailOutputFile.id);
+				int result = s.executeUpdate();
+				s.close();
+				if (result != 1) {
+					logger.debug("Error registering file with id "+thumbnailOutputFile.id+" in video_scrub_thumbnail_files table.");
+					return returnVal;
+				}
+				logger.debug("Created entry in video_scrub_thumbnail_files table for file with id "+thumbnailOutputFile.id+".");
+			}
+			logger.debug("Created entries in video_scrub_thumbnail_files table.");
+		} catch (SQLException e) {
+			e.printStackTrace();
+			throw(new RuntimeException("Error trying to create entries in video_scrub_thumbnail_files."));
+		}
+		
 		returnVal.success = true;
 		return returnVal;
+	}
+	
+	// returns the File object for the new file on success or null otherwise
+	private File generateNewFile(File sourceFile, java.io.File file, FileType fileType, Connection dbConnection) throws SQLException {
+		long size = file.length(); // size of file in bytes
+		Timestamp currentTimestamp = new Timestamp(System.currentTimeMillis());
+		PreparedStatement s = dbConnection.prepareStatement("INSERT INTO files (in_use,created_at,updated_at,size,file_type_id,source_file_id,heartbeat,process_state) VALUES(0,?,?,?,?,?,?,1)", Statement.RETURN_GENERATED_KEYS);
+		s.setTimestamp(1, currentTimestamp);
+		s.setTimestamp(2, currentTimestamp);
+		s.setLong(3, size);
+		s.setInt(4, fileType.getObj().getId());
+		s.setInt(5, sourceFile.getId());
+		// so that nothing else will pick up this file and it can be registered with the heartbeat manager immediately
+		s.setTimestamp(6, currentTimestamp);
+		if (s.executeUpdate() != 1) {
+			s.close();
+			logger.warn("Error occurred when creating database entry for a file.");
+			return null;
+		}
+		
+		ResultSet generatedKeys = s.getGeneratedKeys();
+		generatedKeys.next();
+		int id = generatedKeys.getInt(1);
+		s.close();
+		return new File(id, null, size, fileType.getObj());
 	}
 		
 	private class Format {
@@ -266,18 +352,29 @@ public class VODVideoFileType extends FileTypeAbstract {
 		public java.io.File progressFile;
 	}
 	
-	private class OutputFile {
+	private class VideoOutputFile {
 		
 		public int id;
 		public int w;
 		public int h;
 		public int qualityDefinitionId;
 		
-		public OutputFile(int id, int w, int h, int qualityDefinitionId) {
+		public VideoOutputFile(int id, int w, int h, int qualityDefinitionId) {
 			this.id = id;
 			this.w = w;
 			this.h = h;
 			this.qualityDefinitionId = qualityDefinitionId;
+		}
+	}
+	
+	private class ThumbnailOutputFile {
+		
+		public int id;
+		public VideoThumbnail thumbnail;
+		
+		public ThumbnailOutputFile(int id, VideoThumbnail thumbnail) {
+			this.id = id;
+			this.thumbnail = thumbnail;
 		}
 	}
 }

@@ -8,7 +8,8 @@ public enum FileType {
 	SIDE_BANNER_IMAGES_RENDER(new SideBannersImageRenderFileType(5)),
 	COVER_IMAGE_RENDER(new CoverImageRenderFileType(6)),
 	VOD_VIDEO_RENDER(new VODVideoRenderFileType(7)),
-	COVER_ART_IMAGE_RENDER(new CoverArtImageRenderFileType(8));
+	COVER_ART_IMAGE_RENDER(new CoverArtImageRenderFileType(8)),
+	VOD_SCRUB_THUMBNAIL(new VODScrubThumbnailFileType(9));
 	
 	private final FileTypeAbstract instance;
 	
