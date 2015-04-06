@@ -76,11 +76,16 @@ public class FfmpegHelper {
 			calculatedWidth = (int) Math.floor((double) calculatedWidth / ((double) calculatedHeight/(double) h));
 		}
 		// interval in seconds that the thumbnails should be generated at
-		int interval = Math.max(1, (int) Math.floor(duration/idealNumber));
+		int interval = Math.max(1, (int) Math.ceil(duration/idealNumber));
+		
 		// 1 extra because a thumbnail is also taken at 0 seconds
 		int numThumbnails = (int) Math.floor(duration/interval) + 1;
 		
 		Config config = Config.getInstance();
+		// the way the frame rate option works is that the first image will be 0,
+		// the second will be interval/2
+		// the third will be interval + (interval/2) 
+		// etc
 		int exitVal = RuntimeHelper.executeProgram(new String[] {config.getString("ffmpeg.location"), "-y", "-nostdin", "-i", source.getAbsolutePath(), "-vf", "fps=1/"+interval+",scale="+calculatedWidth+":"+calculatedHeight, workingDir.getAbsolutePath()+System.getProperty("file.separator")+"thumb_%d.jpg"}, workingDir, null, null);
 		if (exitVal != 0) {
 			logger.warn("Error generating video thumbnails for '"+source.getAbsolutePath()+"' with ffmpeg.");
@@ -95,7 +100,11 @@ public class FfmpegHelper {
 				logger.warn("A video thumbnail that should of been generated does not exist.");
 				return null;
 			}
-			videoThumbnails[i] = new VideoThumbnail(interval*i, file);
+			int time = interval*i;
+			if (i > 0) {
+				time = (int) Math.round(time - ((double) interval/2));
+			}
+			videoThumbnails[i] = new VideoThumbnail(time, file);
 		}
 		return videoThumbnails;
 	}
