@@ -54,4 +54,50 @@ public class FfmpegHelper {
 		return new FfmpegFileInfo(w, h, frameRate, duration, noFrames);
 	}
 	
+	// create idealNumber number of thumbnails from the provided video. with a minimum of 1 per second
+	// returns an array of the output files in order, or null if there was an error
+	public static VideoThumbnail[] generateThumbnails(int idealNumber, File source, File workingDir, int w, int h) {
+		FfmpegFileInfo info = getFileInfo(source, workingDir);
+		if (info == null) {
+			return null;
+		}
+		double duration = info.getDuration();
+		int width = info.getW();
+		int height = info.getH();
+		int calculatedWidth = width;
+		int calculatedHeight = height;
+		// figure out what the width and height should be so it would fit in a box of wxh
+		if (calculatedWidth > w) {
+			calculatedWidth = w;
+			calculatedHeight = (int) Math.floor((double) calculatedHeight / ((double) calculatedWidth/(double) w));
+		}
+		if (calculatedHeight > h) {
+			calculatedHeight = h;
+			calculatedWidth = (int) Math.floor((double) calculatedWidth / ((double) calculatedHeight/(double) h));
+		}
+		// interval in seconds that the thumbnails should be generated at
+		int interval = Math.max(1, (int) Math.floor(duration/idealNumber));
+		// 1 extra because a thumbnail is also taken at 0 seconds
+		int numThumbnails = (int) Math.floor(duration/interval) + 1;
+		
+		Config config = Config.getInstance();
+		int exitVal = RuntimeHelper.executeProgram(new String[] {config.getString("ffmpeg.location"), "-y", "-nostdin", "-i", source.getAbsolutePath(), "-vf", "fps=1/"+interval+",scale="+calculatedWidth+":"+calculatedHeight, workingDir.getAbsolutePath()+System.getProperty("file.separator")+"thumb_%d.jpg"}, workingDir, null, null);
+		if (exitVal != 0) {
+			logger.warn("Error generating video thumbnails for '"+source.getAbsolutePath()+"' with ffmpeg.");
+			return null;
+		}
+		
+		// generate the Files that correspond to the output files
+		VideoThumbnail[] videoThumbnails = new VideoThumbnail[numThumbnails];
+		for(int i=0; i<videoThumbnails.length; i++) {
+			File file = new File(workingDir.getAbsolutePath()+System.getProperty("file.separator")+"thumb_"+(i+1)+".jpg");
+			if (!file.exists()) {
+				logger.warn("A video thumbnail that should of been generated does not exist.");
+				return null;
+			}
+			videoThumbnails[i] = new VideoThumbnail(interval*i, file);
+		}
+		return videoThumbnails;
+	}
+	
 }
