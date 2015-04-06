@@ -1,7 +1,5 @@
 package uk.co.la1tv.websiteUploadProcessor;
 
-import java.sql.SQLException;
-
 import org.apache.commons.configuration.ConfigurationException;
 import org.apache.log4j.Logger;
 import org.apache.log4j.PropertyConfigurator;
