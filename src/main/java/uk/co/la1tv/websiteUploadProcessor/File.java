@@ -11,6 +11,7 @@ import java.sql.Timestamp;
 import org.apache.commons.io.FileUtils;
 import org.apache.log4j.Logger;
 
+import uk.co.la1tv.websiteUploadProcessor.fileTypes.FileType;
 import uk.co.la1tv.websiteUploadProcessor.fileTypes.FileTypeAbstract;
 import uk.co.la1tv.websiteUploadProcessor.fileTypes.FileTypeProcessReturnInfo;
 import uk.co.la1tv.websiteUploadProcessor.helpers.DbHelper;
@@ -155,9 +156,30 @@ public class File {
 			}
 			
 			if (!info.success) {
-				// the processing failed so remove the source file. no point keeping it if an error occurred
-				if (!sourceFile.delete()) {
-					logger.warn("Failed to delete file with it "+getId()+" as it failed processing. It might have failed proecssing because it was missing for some reason so this might be ok.");
+				// the processing failed so remove the source file. no point keeping it if an error occurred,
+				// unless this error has occurred during reprocessing in which case don't delete it so reprocessing can be done again
+				try {
+					
+					PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE id=?");
+					s.setInt(1, getId());
+					ResultSet r = s.executeQuery();
+					if (!r.next()) {
+						logger.error("Error querying database to determine if file with id "+getId()+" has already been processed successfully. Could not find file record.");
+					}
+					else if (!r.getBoolean("has_processed_successfully")) {
+						// this is the first attempt at processing the file and it failed.
+						// remove the source file
+						if (!sourceFile.delete()) {
+							logger.warn("Failed to delete file with id "+getId()+" as it failed processing. It might have failed proecssing because it was missing for some reason so this might be ok.");
+						}
+						else {
+							logger.debug("Deleted source file with id "+getId()+" as it failed processing.");
+						}
+					}
+					
+					s.close();
+				} catch (SQLException e) {
+					logger.error("Error querying database to determine if file with id "+getId()+" has already been processed successfully.");
 				}
 			}
 		}
@@ -236,7 +258,16 @@ public class File {
 					PreparedStatement s2 = dbConnection.prepareStatement("UPDATE files SET process_state=? WHERE id=?");
 					s2.setInt(1, info.success ? 1 : 2); // a value of 1 represents success, 2 represents failure
 					s2.setInt(2, getId());
-					if (s2.executeUpdate() != 1) {
+					boolean success = s2.executeUpdate() == 1;
+					if (success) {
+						if (info.success) {
+							PreparedStatement s3 = dbConnection.prepareStatement("UPDATE files SET has_processed_successfully=1 WHERE id=?");
+							s3.setInt(1, getId());
+							s3.executeUpdate(); // this may return 0 because has_processed_successfully might already be 1 if this is a reprocessing
+							s3.close();
+						}
+					}
+					if (!success) {
 						logger.trace("Rolling back database transaction.");
 						dbConnection.prepareStatement("ROLLBACK").executeUpdate();
 						logger.error("Error occurred updating process_state for file with id "+getId()+".");

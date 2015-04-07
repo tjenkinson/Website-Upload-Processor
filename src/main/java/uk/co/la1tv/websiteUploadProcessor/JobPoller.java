@@ -150,8 +150,9 @@ public class JobPoller {
 		private void handleFilesForReprocessing(Connection dbConnection) {
 			logger.info("Looking for files that are set to be reprocessed.");
 			try {
-				// first look for files that have the reprocess flag set and process_state as 1 and update their process_state and reset the flag
-				PreparedStatement s = dbConnection.prepareStatement("UPDATE files SET process_state=3, reprocess=0 WHERE reprocess=1 AND process_state=1"+getFileTypeIdsWhereString("file_type_id"));
+				// first look for files that have the reprocess flag set and process_state as 1, and update their process_state and reset the flag
+				// if the process state is 2 (error) but this has processed successfully before then the source file should not have been deleted so ok to reprocess
+				PreparedStatement s = dbConnection.prepareStatement("UPDATE files SET process_state=3, reprocess=0 WHERE reprocess=1 AND (process_state=1 OR (process_state=2 AND has_processed_successfully=1))"+getFileTypeIdsWhereString("file_type_id"));
 				int i = 1;
 				for (FileType a : FileType.values()) {
 					s.setInt(i++, a.getObj().getId());
