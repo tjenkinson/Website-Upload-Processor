@@ -123,7 +123,8 @@ public class VODVideoFileType extends FileTypeAbstract {
 				
 				logger.debug("Executing ffmpeg for height "+f.h+" and audio bitrate "+f.aBitrate+"kbps, video bitrate "+f.vBitrate+"kbps with frame rate "+f.fr+" fps.");
 				
-				final FfmpegProgressMonitor monitor = new FfmpegProgressMonitor(f.progressFile, info.getNoFrames());
+				double noOutputFrames = Math.ceil(info.getNoFrames() * (f.fr / info.getFrameRate()));
+				final FfmpegProgressMonitor monitor = new FfmpegProgressMonitor(f.progressFile, noOutputFrames);
 				monitor.setCallback(new Runnable() {
 					@Override
 					public void run() {

@@ -27,7 +27,7 @@ public class FfmpegProgressMonitor {
 	 * Make sure to call destroy to make sure timer is cancelled.
 	 * 
 	 * @param progressFile: the file that ffmpeg is writing the progress updates into.
-	 * @param totalNoFrames: the total number of frames in the file. Used to calculate the percentage.
+	 * @param totalNoFrames: the total number of frames in the output file. Used to calculate the percentage.
 	 */
 	public FfmpegProgressMonitor(File progressFile, double totalNoFrames) {
 		this.totalNoFrames = totalNoFrames;
