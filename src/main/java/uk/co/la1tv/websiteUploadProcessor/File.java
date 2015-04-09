@@ -127,7 +127,15 @@ public class File {
 		}
 		
 		if (!errorCopyingSourceFile && !overQuota) {
-			info = type.process(dbConnection, new java.io.File(destinationSourceFilePath), new java.io.File(fileWorkingDir), this);
+			try {
+				info = type.process(dbConnection, new java.io.File(destinationSourceFilePath), new java.io.File(fileWorkingDir), this);
+			}
+			catch (Exception e) {
+				e.printStackTrace();
+				logger.error("An exception was thrown whilst tryingn to process file with id "+getId()+".");
+				info = new FileTypeProcessReturnInfo();
+				info.msg = "An unexpected error occurred.";
+			}
 		}
 		
 		if (info == null) {
