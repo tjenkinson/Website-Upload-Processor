@@ -12,6 +12,8 @@ import java.util.List;
 
 import org.apache.log4j.Logger;
 
+import com.mysql.jdbc.exceptions.jdbc4.MySQLTransactionRollbackException;
+
 import uk.co.la1tv.websiteUploadProcessor.Config;
 import uk.co.la1tv.websiteUploadProcessor.File;
 import uk.co.la1tv.websiteUploadProcessor.helpers.DbHelper;
@@ -326,10 +328,22 @@ public class VODVideoFileType extends FileTypeAbstract {
 		s.setInt(5, sourceFile.getId());
 		// so that nothing else will pick up this file and it can be registered with the heartbeat manager immediately
 		s.setTimestamp(6, currentTimestamp);
-		if (s.executeUpdate() != 1) {
-			s.close();
-			logger.warn("Error occurred when creating database entry for a file.");
-			return null;
+		int numAttempts = 0;
+		try {
+			if (s.executeUpdate() != 1) {
+				s.close();
+				logger.warn("Error occurred when creating database entry for a file.");
+				return null;
+			}
+		}
+		catch(MySQLTransactionRollbackException e) {
+			// http://stackoverflow.com/a/17748793/1048589 and http://dev.mysql.com/doc/refman/5.0/en/innodb-deadlocks.html
+			if (++numAttempts >= 3) {
+				// if this has failed 3 times then abort by rethrowing the exception.
+				throw(e);
+			}
+			e.printStackTrace();
+			logger.warn("Mysql deadlock occurred. Retrying.");
 		}
 		
 		ResultSet generatedKeys = s.getGeneratedKeys();
