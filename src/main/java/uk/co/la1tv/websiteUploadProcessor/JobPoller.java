@@ -127,14 +127,14 @@ public class JobPoller {
 					}
 					catch(Exception e) {
 						// an exception occurred so unregister the file and then rethrow the exception.
-						heartbeatManager.unRegisterFile(file);
+						heartbeatManager.unRegisterFile(file, heartbeatManagerFileLockObj);
 						filesInProgress.remove(file);
 						throw(e);
 					}
 					// first delete anything that might have been left behind if a previous attempt failed abruptly
 					if (!removeChildFilesAndRecords(dbConnection, file, false)) {
 						logger.warn("Failed to delete some files that were left behind from when file with id "+r.getInt("id")+" was processed previously. Not starting job.");
-						heartbeatManager.unRegisterFile(file);
+						heartbeatManager.unRegisterFile(file, heartbeatManagerFileLockObj);
 						filesInProgress.remove(file);
 					}
 					else {
