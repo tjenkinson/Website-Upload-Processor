@@ -342,6 +342,8 @@ public class VODVideoFileType extends FileTypeAbstract {
 				// if this has failed 3 times then abort by rethrowing the exception.
 				throw(e);
 			}
+			e.printStackTrace();
+			logger.warn("Mysql deadlock occurred. Retrying.");
 		}
 		
 		ResultSet generatedKeys = s.getGeneratedKeys();
