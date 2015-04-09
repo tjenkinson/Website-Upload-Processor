@@ -109,7 +109,6 @@ public class JobPoller {
 					
 					Object heartbeatManagerFileLockObj = new Object();
 					
-					Job job = null;
 					try {
 						if (!heartbeatManager.registerFile(file, false, heartbeatManagerFileLockObj)) {
 							logger.info("File with id "+file.getId()+" will not be processed because it's heartbeat was updated somewhere else.");
@@ -125,7 +124,6 @@ public class JobPoller {
 						s2.executeUpdate();
 						
 						filesInProgress.add(file);
-						job = new Job(taskCompletionHandler, file, heartbeatManagerFileLockObj);
 					}
 					catch(Exception e) {
 						// an exception occurred so unregister the file and then rethrow the exception.
@@ -133,8 +131,17 @@ public class JobPoller {
 						filesInProgress.remove(file);
 						throw(e);
 					}
-					threadPool.execute(job);
-					logger.info("Created and scheduled process job for file with id "+r.getInt("id")+".");
+					// first delete anything that might have been left behind if a previous attempt failed abruptly
+					if (!removeChildFilesAndRecords(dbConnection, file, false)) {
+						logger.warn("Failed to delete some files that were left behind from when file with id "+r.getInt("id")+" was processed previously. Not starting job.");
+						heartbeatManager.unRegisterFile(file);
+						filesInProgress.remove(file);
+					}
+					else {
+						Job job = new Job(taskCompletionHandler, file, heartbeatManagerFileLockObj);
+						threadPool.execute(job);
+						logger.info("Created and scheduled process job for file with id "+r.getInt("id")+".");
+					}
 				}
 				s.close();
 			} catch (SQLException e) {
