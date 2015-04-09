@@ -215,6 +215,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 					logger.info("Output video file with id "+newFile.getId()+" moved to web app.");
 				}
 			} catch (SQLException e) {
+				e.printStackTrace();
 				throw(new RuntimeException("Error trying to register files in database."));
 			}
 			
@@ -275,6 +276,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 					logger.info("Output thumbnail file with id "+newFile.getId()+" moved to web app.");
 				}
 			} catch (SQLException e) {
+				e.printStackTrace();
 				throw(new RuntimeException("Error trying to register files in database."));
 			}
 			
