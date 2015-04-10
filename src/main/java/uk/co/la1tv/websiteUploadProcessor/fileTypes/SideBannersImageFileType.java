@@ -21,7 +21,7 @@ public class SideBannersImageFileType extends FileTypeAbstract {
 	private static Logger logger = Logger.getLogger(SideBannersImageFileType.class);
 
 	@Override
-	public FileTypeProcessReturnInfo process(final Connection dbConnection, java.io.File source, java.io.File workingDir, File file) {
+	public FileTypeProcessReturnInfo process(final Connection dbConnection, java.io.File source, java.io.File workingDir, File file, final boolean workingWithCopy) {
 		Config config = Config.getInstance();
 		FileTypeProcessReturnInfo returnVal = new FileTypeProcessReturnInfo();
 		// ids of files that should be marked in_use when the process_state is updated at the end of processing

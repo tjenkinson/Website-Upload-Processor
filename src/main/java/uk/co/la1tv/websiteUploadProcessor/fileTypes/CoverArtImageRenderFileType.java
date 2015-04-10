@@ -15,7 +15,7 @@ public class CoverArtImageRenderFileType extends FileTypeAbstract {
 	private static Logger logger = Logger.getLogger(CoverArtImageRenderFileType.class);
 
 	@Override
-	public FileTypeProcessReturnInfo process(final Connection dbConnection, java.io.File source, java.io.File workingDir, File file) {
+	public FileTypeProcessReturnInfo process(final Connection dbConnection, java.io.File source, java.io.File workingDir, File file, final boolean workingWithCopy) {
 		return null;
 	}
 }

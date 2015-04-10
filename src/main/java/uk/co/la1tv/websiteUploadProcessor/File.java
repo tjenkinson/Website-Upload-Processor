@@ -96,10 +96,11 @@ public class File {
 			}
 		}
 		
+		boolean workingWithCopy = config.getBoolean("general.workWithCopy");
 		String fileWorkingDir = FileHelper.getFileWorkingDir(getId());
 		String sourceFilePath = FileHelper.getSourceFilePath(getId());
 		// the path to file that will be processed. (It might be copied to the working dir so this will be different to sourceFilePath)
-		String destinationSourceFilePath = fileWorkingDir;
+		String destinationSourceFilePath = sourceFilePath;
 		
 		if (!overQuota) {
 			logger.debug("Creating folder for file in working directory...");
@@ -111,8 +112,7 @@ public class File {
 			}
 			workingDirCreated = true; // Purposefully put this outside try block in case it it is partly created maybe, in which case it would still be good to attempt to delete it later.
 			logger.debug("Created folder for file in working directory.");
-			
-			if (config.getBoolean("general.workWithCopy")) {
+			if (workingWithCopy) {
 				try {
 					destinationSourceFilePath = FileHelper.format(fileWorkingDir+"/source");
 					logger.debug("Copying file with id "+getId()+" to working directory...");
@@ -128,7 +128,7 @@ public class File {
 		
 		if (!errorCopyingSourceFile && !overQuota) {
 			try {
-				info = type.process(dbConnection, new java.io.File(destinationSourceFilePath), new java.io.File(fileWorkingDir), this);
+				info = type.process(dbConnection, new java.io.File(destinationSourceFilePath), new java.io.File(fileWorkingDir), this, workingWithCopy);
 			}
 			catch (Exception e) {
 				e.printStackTrace();

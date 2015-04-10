@@ -33,7 +33,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 	private static Logger logger = Logger.getLogger(VODVideoFileType.class);
 
 	@Override
-	public FileTypeProcessReturnInfo process(final Connection dbConnection, java.io.File source, java.io.File workingDir, final File file) {
+	public FileTypeProcessReturnInfo process(final Connection dbConnection, java.io.File source, java.io.File workingDir, final File file, final boolean workingWithCopy) {
 		FileTypeProcessReturnInfo returnVal = new FileTypeProcessReturnInfo();
 		try {
 			Config config = Config.getInstance();
@@ -173,6 +173,16 @@ public class VODVideoFileType extends FileTypeAbstract {
 				if (FileHelper.isOverQuota(totalSize)) {
 					returnVal.msg = "Ran out of space.";
 					return returnVal;
+				}
+			}
+			
+			// delete the source file if it is a copy to save space for the next step
+			if (workingWithCopy) {
+				if (!source.delete()) {
+					logger.warn("Error when trying to delete copy of source file with id "+file.getId()+" before finalizing renders.");
+				}
+				else {
+					logger.info("Deleted copy of source file with id "+file.getId()+" from working directory to save space as it is no longer needed.");
 				}
 			}
 			

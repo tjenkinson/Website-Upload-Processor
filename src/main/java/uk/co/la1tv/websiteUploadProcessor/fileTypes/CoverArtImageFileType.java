@@ -21,7 +21,7 @@ public class CoverArtImageFileType extends FileTypeAbstract {
 	private static Logger logger = Logger.getLogger(CoverArtImageFileType.class);
 
 	@Override
-	public FileTypeProcessReturnInfo process(final Connection dbConnection, java.io.File source, java.io.File workingDir, File file) {
+	public FileTypeProcessReturnInfo process(final Connection dbConnection, java.io.File source, java.io.File workingDir, File file, final boolean workingWithCopy) {
 		// any image format and size is acceptable. It will always be cropped to become correct aspect ratio
 		Config config = Config.getInstance();
 		FileTypeProcessReturnInfo returnVal = new FileTypeProcessReturnInfo();
