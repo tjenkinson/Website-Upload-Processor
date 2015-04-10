@@ -15,7 +15,7 @@ public class VODVideoRenderFileType extends FileTypeAbstract {
 	private static Logger logger = Logger.getLogger(VODVideoRenderFileType.class);
 
 	@Override
-	public FileTypeProcessReturnInfo process(final Connection dbConnection, java.io.File source, java.io.File workingDir, File file) {
+	public FileTypeProcessReturnInfo process(final Connection dbConnection, java.io.File source, java.io.File workingDir, File file, final boolean workingWithCopy) {
 		// TODO Auto-generated method stub
 		return null;
 	}

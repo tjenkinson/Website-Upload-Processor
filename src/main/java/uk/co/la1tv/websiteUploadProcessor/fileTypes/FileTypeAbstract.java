@@ -26,7 +26,8 @@ public abstract class FileTypeAbstract {
 	 * @param source: A io file object representing the source file's location.
 	 * @param workingDir: A io file object representing the location of this files working dir.
 	 * @param file: The actual file object.
+	 * @param workingWithCopy: true if the source file is a copy of the original, not the original.
 	 * @return null if error processing or set of ids to mark as in_use when process is marked as completed
 	 */
-	public abstract FileTypeProcessReturnInfo process(Connection dbConnection, java.io.File source, java.io.File workingDir, File file);
+	public abstract FileTypeProcessReturnInfo process(Connection dbConnection, java.io.File source, java.io.File workingDir, File file, boolean workingWithCopy);
 }
