@@ -12,13 +12,13 @@ import uk.co.la1tv.websiteUploadProcessor.helpers.ImageFormat;
 import uk.co.la1tv.websiteUploadProcessor.helpers.ImageMagickFormat;
 import uk.co.la1tv.websiteUploadProcessor.helpers.ImageProcessorHelper;
 
-public class SideBannersImageFileType extends FileTypeAbstract {
+public class SideBannersFillImageFileType extends FileTypeAbstract {
 	
-	public SideBannersImageFileType(int id) {
+	public SideBannersFillImageFileType(int id) {
 		super(id);
 	}
 
-	private static Logger logger = Logger.getLogger(SideBannersImageFileType.class);
+	private static Logger logger = Logger.getLogger(SideBannersFillImageFileType.class);
 
 	@Override
 	public FileTypeProcessReturnInfo process(final Connection dbConnection, java.io.File source, java.io.File workingDir, File file, final boolean workingWithCopy) {
@@ -35,9 +35,9 @@ public class SideBannersImageFileType extends FileTypeAbstract {
 			return returnVal;
 		}
 		
-		final List<ImageFormat> formats = ImageProcessorHelper.getFormats(config.getList("encoding.sideBannerImageFormats"), workingDir);
+		final List<ImageFormat> formats = ImageProcessorHelper.getFormats(config.getList("encoding.sideBannerFillImageFormats"), workingDir);
 	
-		returnVal.success = ImageProcessorHelper.process(dbConnection, returnVal, source, workingDir, formats, inputFormat, ImageMagickFormat.JPG, file, FileType.SIDE_BANNERS_IMAGE_RENDER);
+		returnVal.success = ImageProcessorHelper.process(dbConnection, returnVal, source, workingDir, formats, inputFormat, ImageMagickFormat.JPG, file, FileType.SIDE_BANNERS_FILL_IMAGE_RENDER);
 		return returnVal;
 	}
 	
