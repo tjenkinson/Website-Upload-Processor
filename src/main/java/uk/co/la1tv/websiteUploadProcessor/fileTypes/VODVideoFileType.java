@@ -51,7 +51,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 			}
 			
 			// check the duration is more than 0
-			if (info.getDuration() == 0) {
+			if (info.getDuration() == 0 || info.getNoFrames() == 0) {
 				logger.warn("Cannot process VOD file with id "+file.getId()+" because it's duration is 0.");
 				returnVal.msg = "Video duration must be more than 0.";
 				return returnVal;
@@ -155,10 +155,6 @@ public class VODVideoFileType extends FileTypeAbstract {
 				}
 			}
 			
-			
-			
-			
-			
 			// generate the thumbnails that will be shown as the user scrubs through the item in the player.
 			DbHelper.updateStatus(dbConnection, file.getId(), "Generating scrub thumbnails.", null);
 			VideoThumbnail[] thumbnails = FfmpegHelper.generateThumbnails(config.getInt("encoding.vodScrubThumbnails.numberPerItem"), source, workingDir, config.getInt("encoding.vodScrubThumbnails.width"), config.getInt("encoding.vodScrubThumbnails.height"));
@@ -175,6 +171,16 @@ public class VODVideoFileType extends FileTypeAbstract {
 					return returnVal;
 				}
 			}
+			
+			// TODO for each of the renders if the file size is more than a certain amount also encode as dash and hls
+			if (false) {
+				DbHelper.updateStatus(dbConnection, file.getId(), "Creating HLS encodes.", 0);
+				// TODO create the chunks, register them in files to get file ids, create playlist file and this becomes the id for the entry in video_files_hls
+				
+				DbHelper.updateStatus(dbConnection, file.getId(), "Creating DASH encodes.", 0);
+				// TODO create the necessary files for dash, register the files to get file ids, replace the relevent properties contianing file paths in the generated manifest xml file with relative ones to the correct file ids
+			}
+			
 			
 			// delete the source file if it is a copy to save space for the next step
 			if (workingWithCopy) {
