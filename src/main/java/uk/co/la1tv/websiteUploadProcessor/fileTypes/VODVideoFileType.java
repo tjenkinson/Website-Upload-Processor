@@ -1,5 +1,6 @@
 package uk.co.la1tv.websiteUploadProcessor.fileTypes;
 
+import java.io.IOException;
 import java.math.BigInteger;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -10,7 +11,22 @@ import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
 
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
+
 import org.apache.log4j.Logger;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.NamedNodeMap;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+import org.xml.sax.SAXException;
 
 import com.mysql.jdbc.exceptions.jdbc4.MySQLTransactionRollbackException;
 
@@ -172,15 +188,62 @@ public class VODVideoFileType extends FileTypeAbstract {
 				}
 			}
 			
-			// TODO for each of the renders if the file size is more than a certain amount also encode as dash and hls
-			if (false) {
-				DbHelper.updateStatus(dbConnection, file.getId(), "Creating HLS encodes.", 0);
-				// TODO create the chunks, register them in files to get file ids, create playlist file and this becomes the id for the entry in video_files_hls
-				
-				DbHelper.updateStatus(dbConnection, file.getId(), "Creating DASH encodes.", 0);
-				// TODO create the necessary files for dash, register the files to get file ids, replace the relevent properties contianing file paths in the generated manifest xml file with relative ones to the correct file ids
-			}
+			// TODO
+			// DbHelper.updateStatus(dbConnection, file.getId(), "Creating HLS encodes.", 0);
+			// TODO create the chunks, register them in files to get file ids, create playlist file and this becomes the id for the entry in video_files_hls
 			
+			// TODO create the necessary files for dash, register the files to get file ids, replace the relevent properties containing file paths in the generated manifest xml file with relative ones to the correct file ids
+			
+			DbHelper.updateStatus(dbConnection, file.getId(), "Creating DASH encodes.", null);
+			
+			// loop through different formats and render videos for ones that are applicable
+			for (final Format f : formatsToRender) {
+				
+				if (!f.shouldCreateDash()) {
+					continue;
+				}
+				
+				// check if file is now marked for deletion
+				// TODO move this to a method
+				try {
+					PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE id=?");
+					s.setInt(1, file.getId());
+					ResultSet r = s.executeQuery();
+					if (!r.next()) {
+						logger.warn("File record could not be found when checking to see if file has now been deleted for file with id "+file.getId()+".");
+					}
+					if (r.getBoolean("ready_for_delete")) {
+						logger.debug("VOD with id "+file.getId()+" has been marked for deletion so not processing any more.");
+						s.close();
+						return returnVal;
+					}
+					s.close();
+				} catch (SQLException e) {
+					throw(new RuntimeException("SQL error when trying to check if file still hasn't been deleted."));
+				}
+			
+				logger.debug("Executing mp4box to create DASH output for output file with height "+f.h+" and audio bitrate "+f.aBitrate+"kbps, video bitrate "+f.vBitrate+"kbps with frame rate "+f.fr+" fps.");	
+				exitVal = RuntimeHelper.executeProgram(new String[] {config.getString("mp4box.location"), "-dash", "5000", "-rap", "-frag-rap", "-profile", "onDemand", "-out", f.outputFile.getName()+"_dash", f.outputFile.getAbsolutePath()+"#audio", f.outputFile.getAbsolutePath()+"#video"}, workingDir, null, null);
+				if (exitVal == 0) {
+					logger.debug("mp4box finished successfully with error code "+exitVal+".");
+					
+					// TODO collect and modify files
+					// TODO
+					//totalSize.add(BigInteger.valueOf(f.outputFile.length()));
+					//if (FileHelper.isOverQuota(totalSize)) {
+					//	returnVal.msg = "Ran out of space.";
+					//	return returnVal;
+					//}
+				}
+				else {
+					logger.warn("mp4box finished but returned error code "+exitVal+".");
+					// if any renders fail fail the whole thing.
+					// already rendered files will be cleaned up later because the working directory is cleared
+					returnVal.msg = "Error creating DASH render of video.";
+					return returnVal;
+				}
+				
+			}
 			
 			// delete the source file if it is a copy to save space for the next step
 			if (workingWithCopy) {
@@ -225,17 +288,69 @@ public class VODVideoFileType extends FileTypeAbstract {
 					videoOutputFiles.add(new VideoOutputFile(newFile.getId(), info.getW(), info.getH(), f.qualityDefinitionId));
 					
 					// copy file to server
-					logger.info("Moving output file with id "+newFile.getId()+" to web app...");
-					if (!FileHelper.moveToWebApp(f.outputFile, newFile.getId())) {
-						logger.error("Error trying to move output file with id "+newFile.getId()+" to web app.");
+					if (!moveFileToWebApp(f.outputFile, newFile)) {
 						return returnVal;
 					}
-					logger.info("Output video file with id "+newFile.getId()+" moved to web app.");
+					
+					if (f.shouldCreateDash()) {
+						// register dash audio channel render and video channel renders
+						logger.debug("Creating dash render file records for render with height "+f.h+" belonging to source file with id "+file.getId()+".");
+						File dashAudioChannelFile = generateNewFile(file, f.getDashAudioChannelFile(), FileType.DASH_SEGMENT, dbConnection);
+						if (dashAudioChannelFile == null) {
+							logger.warn("Error trying to generate file object for dash audio channel output file.");
+							return returnVal;
+						}
+						File dashVideoChannelFile = generateNewFile(file, f.getDashVideoChannelFile(), FileType.DASH_SEGMENT, dbConnection);
+						if (dashVideoChannelFile == null) {
+							logger.warn("Error trying to generate file object for dash video channel output file.");
+							return returnVal;
+						}
+						
+						if (!returnVal.registerNewFile(dashAudioChannelFile)) {
+							// error occurred. abort
+							logger.warn("Error trying to register dash audio channel file.");
+							return returnVal;
+						}
+						if (!returnVal.registerNewFile(dashVideoChannelFile)) {
+							// error occurred. abort
+							logger.warn("Error trying to register dash video channel file.");
+							return returnVal;
+						}
+						logger.debug("File records created with ids "+dashAudioChannelFile.getId()+" and "+dashVideoChannelFile.getId()+" for dash render with height "+f.h+" belonging to source file with id "+file.getId()+".");
+						
+						// modify dash description file so that the paths to the audio and video channel files are correct
+						java.io.File mediaPresentationFile = f.getDashMediaPresentationDescriptionFile(dashAudioChannelFile, dashVideoChannelFile);
+						if (mediaPresentationFile == null) {
+							logger.warn("Error getting dash media description presentation file.");
+							return returnVal;
+						}
+						logger.debug("Creating dash media presentation description file record for render with height "+f.h+" belonging to source file with id "+file.getId()+".");
+						File mediaPresentationFileObj = generateNewFile(file, mediaPresentationFile, FileType.DASH_MEDIA_PRESENTATION_DESCRIPTION, dbConnection);
+						if (mediaPresentationFileObj == null) {
+							logger.warn("Error trying to generate file object for dash media presentation description file.");
+							return returnVal;
+						}
+
+						// copy files to server
+						if (!moveFileToWebApp(f.getDashAudioChannelFile(), dashAudioChannelFile)) {
+							return returnVal;
+						}
+						if (!moveFileToWebApp(f.getDashVideoChannelFile(), dashVideoChannelFile)) {
+							return returnVal;
+						}
+						if (!moveFileToWebApp(mediaPresentationFile, mediaPresentationFileObj)) {
+							return returnVal;
+						}
+						
+					}
 				}
+				
 			} catch (SQLException e) {
 				e.printStackTrace();
 				throw(new RuntimeException("Error trying to register files in database."));
 			}
+			
+			// TODO create entry in video_files_dash if necessary
 			
 			try {
 				// create entries in video_files
@@ -368,6 +483,16 @@ public class VODVideoFileType extends FileTypeAbstract {
 		s.close();
 		return new File(id, null, size, fileType.getObj());
 	}
+	
+	private boolean moveFileToWebApp(java.io.File file, File fileObj) {
+		logger.info("Moving output file with id "+fileObj.getId()+" to web app...");
+		if (!FileHelper.moveToWebApp(file, fileObj.getId())) {
+			logger.error("Error trying to move output file with id "+fileObj.getId()+" to web app.");
+			return false;
+		}
+		logger.info("Output video file with id "+fileObj.getId()+" moved to web app.");
+		return true;
+	}
 		
 	private class Format {
 		
@@ -379,6 +504,125 @@ public class VODVideoFileType extends FileTypeAbstract {
 			this.fr = fr;
 			this.outputFile = outputFile;
 			this.progressFile = progressFile;
+		}
+		
+		public boolean shouldCreateDash() {
+			return true; // TODO
+		}
+		
+		public java.io.File getDashAudioChannelFile() {
+			if (!shouldCreateDash()) {
+				throw(new RuntimeException("Dash render not being created."));
+			}
+			// mp4box will render to this file.
+			return new java.io.File(FileHelper.format(outputFile.getParentFile().getAbsolutePath()+"/"+outputFile.getName()+"_track1_dashinit.mp4"));
+		}
+		
+		public java.io.File getDashVideoChannelFile() {
+			if (!shouldCreateDash()) {
+				throw(new RuntimeException("Dash render not being created."));
+			}
+			return new java.io.File(FileHelper.format(outputFile.getParentFile().getAbsolutePath()+"/"+outputFile.getName()+"_track2_dashinit.mp4"));
+		}
+		
+		// will return a File which points to a modified version of the presentation description file that has the correct paths to the audio and video channel files
+		// or null if there was an error generating the file
+		public java.io.File getDashMediaPresentationDescriptionFile(File audioChannelFile, File videoChannelFile) {
+			if (!shouldCreateDash()) {
+				throw(new RuntimeException("Dash render not being created."));
+			}
+			java.io.File destinationDescriptionFile = new java.io.File(FileHelper.format(outputFile.getParentFile().getAbsolutePath()+"/"+outputFile.getName()+"_dash_updated.mpd"));
+			// mp4box will generate this
+			java.io.File sourceDescriptionFile = new java.io.File(FileHelper.format(outputFile.getParentFile().getAbsolutePath()+"/"+outputFile.getName()+"_dash.mpd"));
+			
+			DocumentBuilderFactory docFactory = DocumentBuilderFactory.newInstance();
+			DocumentBuilder docBuilder;
+			try {
+				docBuilder = docFactory.newDocumentBuilder();
+				Document doc = docBuilder.parse(sourceDescriptionFile);
+				Node[] roots = extractNodesFromNodeList(doc.getChildNodes(), "MPD");
+				if (roots.length != 1) {
+					logger.error("Could not find \"MPD\" element in dash media presentation description file.");
+					return null;
+				}
+				Node root = roots[0];
+				Node[] periodNodes = extractNodesFromNodeList(root.getChildNodes(), "Period");
+				if (periodNodes.length != 1) {
+					logger.error("Could not find \"period\" element in dash media presentation description file.");
+					return null;
+				}
+				Node periodNode = periodNodes[0];
+				Node[] adaptationSetNodes = extractNodesFromNodeList(periodNode.getChildNodes(), "AdaptationSet");
+				if (adaptationSetNodes.length != 2) {
+					logger.error("Period in dash media presentation description file not as expected.");
+					return null;
+				}
+				Node audioAdaptationSetNode = adaptationSetNodes[0];
+				NodeList audioAdaptationSetNodeList = audioAdaptationSetNode.getChildNodes();
+				// the relative url to the file will just be the id of the file
+				if (!setBaseUrlInAdaptationSet(audioAdaptationSetNodeList, audioChannelFile.getId()+"")) {
+					return null;
+				}
+				Node videoAdaptationSetNode = adaptationSetNodes[1];
+				NodeList videoAdaptationSetNodeList = videoAdaptationSetNode.getChildNodes();
+				// the relative url to the file will just be the id of the file
+				if (!setBaseUrlInAdaptationSet(videoAdaptationSetNodeList, videoChannelFile.getId()+"")) {
+					return null;
+				}
+				
+				// write the new file
+				TransformerFactory transformerFactory = TransformerFactory.newInstance();
+				Transformer transformer = transformerFactory.newTransformer();
+				DOMSource source = new DOMSource(doc);
+				if (destinationDescriptionFile.exists()) {
+					if (!destinationDescriptionFile.delete()) {
+						logger.error("Unable to delete existing generated dash media presentation description file.");
+						return null;
+					}
+				}
+				StreamResult result = new StreamResult(destinationDescriptionFile);
+				transformer.transform(source, result);
+			
+			} catch (ParserConfigurationException | SAXException | IOException | TransformerException e) {
+				logger.error("Error generating dash media presentation description file.");
+				return null;
+			}
+			return destinationDescriptionFile;
+		}
+		
+		private Node[] extractNodesFromNodeList(NodeList nodes, String name) {
+			ArrayList<Node> nodeObjects = new ArrayList<Node>();
+			for (int i=0; i<nodes.getLength(); i++) {
+				Node node = nodes.item(i);
+				if (name.equals(node.getNodeName())){
+					nodeObjects.add(node);
+				}
+			}
+			return nodeObjects.toArray(new Node[nodeObjects.size()]);
+		}
+		
+		private boolean setBaseUrlInAdaptationSet(NodeList adaptationSetNodeList, String value) {
+			Node[] representationNodes = extractNodesFromNodeList(adaptationSetNodeList, "Representation");
+			if (representationNodes.length != 1) {
+				logger.error("Adaptation set in dash media presentation description file not as expected.");
+				return false;
+			}
+			Node representationNode = representationNodes[0];
+			NodeList representationNodeList = representationNode.getChildNodes();
+			Node[] baseUrlNodes = extractNodesFromNodeList(representationNodeList, "BaseURL");
+
+			if (baseUrlNodes.length != 1) {
+				logger.error("Could not find \"BaseURL\" element in dash media presentation description file.");
+				return false;
+			}
+			Node baseUrlNode = baseUrlNodes[0];
+			if (baseUrlNode.getNodeType() != Node.ELEMENT_NODE) {
+				logger.error("\"BaseURL\" element in dash media presentation description file is invalid.");
+				return false;
+			}
+			Element baseUrlElement = (Element) baseUrlNode;
+			baseUrlElement.setTextContent(value);
+			return true;
 		}
 		
 		public int h;

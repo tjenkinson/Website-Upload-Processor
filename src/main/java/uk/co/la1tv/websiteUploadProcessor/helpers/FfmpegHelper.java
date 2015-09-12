@@ -34,8 +34,7 @@ public class FfmpegHelper {
 		int h;
 		double frameRate;
 		double duration;
-		double noFrames;
-		double size;
+		long noFrames;
 		
 		try {
 			metadata = new JSONObject(streamMonitor.getOutput());
@@ -44,8 +43,7 @@ public class FfmpegHelper {
 			Fraction f = new FractionFormat().parse(metadata.getJSONArray("streams").getJSONObject(0).getString("r_frame_rate"));
 			frameRate = f.doubleValue();
 			duration = Double.parseDouble(metadata.getJSONObject("format").getString("duration"));
-			noFrames = Double.parseDouble(metadata.getJSONArray("streams").getJSONObject(0).getString("nb_read_frames"));
-			size = Double.parseDouble(metadata.getJSONObject("format").getString("size"));
+			noFrames = Long.parseLong(metadata.getJSONArray("streams").getJSONObject(0).getString("nb_read_frames"));
 		}
 		catch(JSONException e) {
 			logger.warn("Error parsing JSON from ffprobe for file '"+file.getAbsolutePath()+"'.");
@@ -53,7 +51,7 @@ public class FfmpegHelper {
 			return null;
 		}
 		
-		return new FfmpegFileInfo(w, h, frameRate, duration, noFrames, size);
+		return new FfmpegFileInfo(w, h, frameRate, duration, noFrames);
 	}
 	
 	// create idealNumber number of thumbnails from the provided video. with a minimum of 1 per second
