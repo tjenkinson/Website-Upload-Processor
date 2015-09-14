@@ -121,23 +121,10 @@ public class VODVideoFileType extends FileTypeAbstract {
 			for (final Format f : formatsToRender) {
 				
 				// check if file is now marked for deletion
-				try {
-					PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE id=?");
-					s.setInt(1, file.getId());
-					ResultSet r = s.executeQuery();
-					if (!r.next()) {
-						logger.warn("File record could not be found when checking to see if file has now been deleted for file with id "+file.getId()+".");
-					}
-					if (r.getBoolean("ready_for_delete")) {
-						logger.debug("VOD with id "+file.getId()+" has been marked for deletion so not processing any more.");
-						s.close();
-						return returnVal;
-					}
-					s.close();
-				} catch (SQLException e) {
-					throw(new RuntimeException("SQL error when trying to check if file still hasn't been deleted."));
+				if (isFileMarkedForDeleteion(dbConnection, file)) {
+					logger.debug("VOD with id "+file.getId()+" has been marked for deletion so not processing any more.");
+					return returnVal;
 				}
-				
 				logger.debug("Executing ffmpeg for height "+f.h+" and audio bitrate "+f.aBitrate+"kbps, video bitrate "+f.vBitrate+"kbps with frame rate "+f.fr+" fps.");
 				
 				double noOutputFrames = Math.ceil(info.getNoFrames() * (f.fr / info.getFrameRate()));
@@ -191,32 +178,28 @@ public class VODVideoFileType extends FileTypeAbstract {
 			// DbHelper.updateStatus(dbConnection, file.getId(), "Creating HLS encodes.", 0);
 			// TODO create the chunks, register them in files to get file ids, create playlist file and this becomes the id for the entry in video_files_hls
 			
-			DbHelper.updateStatus(dbConnection, file.getId(), "Creating DASH encodes.", null);
+			int numDashRenders = 0;
+			for (final Format f : formatsToRender) {
+				if (f.shouldCreateDash()) {
+					f.creatingDashRender = true;
+					numDashRenders++;
+				}
+			}
 			
 			// loop through different formats and render videos for ones that are applicable
+			int dashRenderNum = -1;
 			for (final Format f : formatsToRender) {
 				
-				if (!f.shouldCreateDash()) {
+				if (!f.creatingDashRender) {
 					continue;
 				}
+				dashRenderNum++;
+				DbHelper.updateStatus(dbConnection, file.getId(), "Creating DASH encodes.", ((int) Math.floor((dashRenderNum/(float) numDashRenders) * 100)));
 				
 				// check if file is now marked for deletion
-				// TODO move this to a method
-				try {
-					PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE id=?");
-					s.setInt(1, file.getId());
-					ResultSet r = s.executeQuery();
-					if (!r.next()) {
-						logger.warn("File record could not be found when checking to see if file has now been deleted for file with id "+file.getId()+".");
-					}
-					if (r.getBoolean("ready_for_delete")) {
-						logger.debug("VOD with id "+file.getId()+" has been marked for deletion so not processing any more.");
-						s.close();
-						return returnVal;
-					}
-					s.close();
-				} catch (SQLException e) {
-					throw(new RuntimeException("SQL error when trying to check if file still hasn't been deleted."));
+				if (isFileMarkedForDeleteion(dbConnection, file)) {
+					logger.debug("VOD with id "+file.getId()+" has been marked for deletion so not processing any more.");
+					return returnVal;
 				}
 			
 				logger.debug("Executing mp4box to create DASH output for output file with height "+f.h+" and audio bitrate "+f.aBitrate+"kbps, video bitrate "+f.vBitrate+"kbps with frame rate "+f.fr+" fps.");	
@@ -290,7 +273,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 					File dashAudioChannelFileObj = null;
 					File dashVideoChannelFileObj = null;
 					
-					if (f.shouldCreateDash()) {
+					if (f.creatingDashRender) {
 						// register dash audio channel render and video channel renders
 						logger.debug("Creating dash render file records for render with height "+f.h+" belonging to source file with id "+file.getId()+".");
 						dashAudioChannelFileObj = generateNewFile(file, f.getDashAudioChannelFile(), FileType.DASH_SEGMENT, dbConnection);
@@ -515,6 +498,29 @@ public class VODVideoFileType extends FileTypeAbstract {
 		logger.info("Output video file with id "+fileObj.getId()+" moved to web app.");
 		return true;
 	}
+	
+	private boolean isFileMarkedForDeleteion(Connection dbConnection, File file) {
+		try {
+			PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE id=?");
+			s.setInt(1, file.getId());
+			ResultSet r = s.executeQuery();
+			if (!r.next()) {
+				logger.warn("File record could not be found when checking to see if file has now been deleted for file with id "+file.getId()+".");
+				s.close();
+				// pretend it's been deleted
+				return true;
+			}
+			if (r.getBoolean("ready_for_delete")) {
+				logger.debug("File with id "+file.getId()+" has been marked for deletion.");
+				s.close();
+				return true;
+			}
+			s.close();
+			return false;
+		} catch (SQLException e) {
+			throw(new RuntimeException("SQL error when trying to check if file still hasn't been deleted."));
+		}
+	}
 		
 	private class Format {
 		
@@ -529,7 +535,10 @@ public class VODVideoFileType extends FileTypeAbstract {
 		}
 		
 		public boolean shouldCreateDash() {
-			return true; // TODO make this only true when source file is larger than a certain configurable size
+			if (!outputFile.exists()) {
+				throw(new RuntimeException("Can not determine if a dash render should be created because the initial render file is missing."));
+			}
+			return outputFile.length() > Config.getInstance().getLong("encoding.minSizeRequiredForDashEncode")*1000000;
 		}
 		
 		public java.io.File getDashAudioChannelFile() {
@@ -654,6 +663,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 		public int qualityDefinitionId;
 		public java.io.File outputFile;
 		public java.io.File progressFile;
+		public boolean creatingDashRender = false;
 	}
 	
 	private class VideoOutputFile {
