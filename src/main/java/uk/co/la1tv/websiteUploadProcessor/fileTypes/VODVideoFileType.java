@@ -542,7 +542,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 		}
 		
 		public java.io.File getDashAudioChannelFile() {
-			if (!shouldCreateDash()) {
+			if (!creatingDashRender) {
 				return null;
 			}
 			// mp4box will render to this file.
@@ -550,7 +550,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 		}
 		
 		public java.io.File getDashVideoChannelFile() {
-			if (!shouldCreateDash()) {
+			if (!creatingDashRender) {
 				return null;
 			}
 			return new java.io.File(FileHelper.format(outputFile.getParentFile().getAbsolutePath()+"/"+outputFile.getName()+"_track2_dashinit.mp4"));
@@ -559,7 +559,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 		// will return a File which points to a modified version of the presentation description file that has the correct paths to the audio and video channel files
 		// or null if there was an error generating the file, or a dash render should not be created
 		public java.io.File getDashMediaPresentationDescriptionFile(File audioChannelFile, File videoChannelFile) {
-			if (!shouldCreateDash()) {
+			if (!creatingDashRender) {
 				return null;
 			}
 			java.io.File destinationDescriptionFile = new java.io.File(FileHelper.format(outputFile.getParentFile().getAbsolutePath()+"/"+outputFile.getName()+"_dash_updated.mpd"));
