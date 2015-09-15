@@ -5,9 +5,9 @@ public class FfmpegFileInfo {
 	private int h;
 	private double frameRate;
 	private double duration;
-	private double noFrames;
+	private long noFrames;
 	
-	public FfmpegFileInfo(int w, int h, double frameRate, double duration, double noFrames) {
+	public FfmpegFileInfo(int w, int h, double frameRate, double duration, long noFrames) {
 		this.w = w;
 		this.h = h;
 		this.frameRate = frameRate;
@@ -31,7 +31,7 @@ public class FfmpegFileInfo {
 		return duration;
 	}
 	
-	public double getNoFrames() {
+	public long getNoFrames() {
 		return noFrames;
 	}
 }

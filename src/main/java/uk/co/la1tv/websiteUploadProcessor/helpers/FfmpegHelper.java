@@ -22,7 +22,7 @@ public class FfmpegHelper {
 		// get source file information.
 		GenericStreamMonitor streamMonitor = new GenericStreamMonitor();
 		
-		exitVal = RuntimeHelper.executeProgram(new String[] {config.getString("ffmpeg.probeLocation"), "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", file.getAbsolutePath()}, workingDir, streamMonitor, null);
+		exitVal = RuntimeHelper.executeProgram(new String[] {config.getString("ffmpeg.probeLocation"), "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", "-select_streams", "v:0", "-count_frames", file.getAbsolutePath()}, workingDir, streamMonitor, null);
 		if (exitVal != 0) {
 			logger.warn("Error retrieving metadata for file '"+file.getAbsolutePath()+"' with ffprobe.");
 			return null;
@@ -34,7 +34,7 @@ public class FfmpegHelper {
 		int h;
 		double frameRate;
 		double duration;
-		double noFrames;
+		long noFrames;
 		
 		try {
 			metadata = new JSONObject(streamMonitor.getOutput());
@@ -43,7 +43,7 @@ public class FfmpegHelper {
 			Fraction f = new FractionFormat().parse(metadata.getJSONArray("streams").getJSONObject(0).getString("r_frame_rate"));
 			frameRate = f.doubleValue();
 			duration = Double.parseDouble(metadata.getJSONObject("format").getString("duration"));
-			noFrames = Double.parseDouble(metadata.getJSONArray("streams").getJSONObject(0).getString("nb_frames"));
+			noFrames = Long.parseLong(metadata.getJSONArray("streams").getJSONObject(0).getString("nb_read_frames"));
 		}
 		catch(JSONException e) {
 			logger.warn("Error parsing JSON from ffprobe for file '"+file.getAbsolutePath()+"'.");
