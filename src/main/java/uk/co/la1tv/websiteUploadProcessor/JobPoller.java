@@ -336,9 +336,9 @@ public class JobPoller {
 				
 					{
 						try {
-							PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE (heartbeat IS NULL OR heartbeat<?) AND source_file_id=?");
-							s.setTimestamp(1, heartbeatManager.getProcessingFilesTimestamp());
-							s.setInt(2, sourceFile.getId());
+							// no need to check heartbeat here because it is done at the top of this method
+							PreparedStatement s = dbConnection.prepareStatement("SELECT * FROM files WHERE source_file_id=?");
+							s.setInt(1, sourceFile.getId());
 							ResultSet r = s.executeQuery();
 							
 							while(r.next()) {
@@ -398,6 +398,7 @@ public class JobPoller {
 									}
 								} catch (SQLException e) {
 									logger.error("SQLException when trying to query databases for files that need deleting.");
+									e.printStackTrace();
 								}
 							}
 						}
