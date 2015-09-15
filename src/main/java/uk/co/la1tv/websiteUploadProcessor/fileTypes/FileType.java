@@ -14,7 +14,6 @@ public enum FileType {
 	SIDE_BANNERS_FILL_IMAGE_RENDER(new SideBannersFillImageRenderFileType(11)),
 	DASH_MEDIA_PRESENTATION_DESCRIPTION(new DashMediaPresentationDescriptionType(12)),
 	DASH_SEGMENT(new DashSegmentType(13)),
-	HLS_MASTER_PLAYLIST(new HlsMasterPlaylistType(14)),
 	HLS_MEDIA_PLAYLIST(new HlsMediaPlaylistType(15)),
 	HLS_SEGMENT(new HlsSegmentType(16));
 	
