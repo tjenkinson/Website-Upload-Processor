@@ -254,7 +254,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 						DbHelper.updateStatus(dbConnection, file.getId(), renderHlsMessage, actualPercentage);
 					}
 				});
-				exitVal = RuntimeHelper.executeProgram(new String[] {config.getString("ffmpeg.location"), "-y", "-nostdin", "-timelimit", ""+config.getInt("ffmpeg.videoEncodeTimeLimit"), "-progress", f.getHlsProgressFile().getAbsolutePath(), "-i", f.outputFile.getAbsolutePath(), "-hls_allow_cache", "1", "-hls_time", "5", "-hls_segment_filename", f.getHlsSegmentFile().getAbsolutePath(), "-hls_flags", "single_file", "-f", "hls", f.getHlsPlaylistFile().getAbsolutePath()}, workingDir, null, null);
+				exitVal = RuntimeHelper.executeProgram(new String[] {config.getString("ffmpeg.location"), "-y", "-nostdin", "-timelimit", ""+config.getInt("ffmpeg.videoEncodeTimeLimit"), "-progress", f.getHlsProgressFile().getAbsolutePath(), "-i", f.outputFile.getAbsolutePath(), "-hls_allow_cache", "1", "-hls_time", "5", "-hls_list_size", "0", "-hls_segment_filename", f.getHlsSegmentFile().getAbsolutePath(), "-hls_flags", "single_file", "-f", "hls", f.getHlsPlaylistFile().getAbsolutePath()}, workingDir, null, null);
 				monitor.destroy();
 				if (exitVal == 0) {
 					logger.debug("ffmpeg finished successfully with error code "+exitVal+".");
