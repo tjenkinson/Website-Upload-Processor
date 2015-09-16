@@ -1,6 +1,9 @@
 # this should be copied to config.properties in this folder, and then completed.
 
 server.id = # should contain an integer that uniquely represents this server
+# maximum amount of space (mb) that is allowed in the webapp before the server starts failing jobs. This must be the same across all servers
+# -1 or not specified means no limit.
+general.webAppSpaceQuota = 
 db.host = 
 db.database = 
 db.username = 

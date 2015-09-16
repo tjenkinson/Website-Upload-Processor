@@ -98,6 +98,11 @@ public class FileHelper {
 	
 	public static boolean isOverQuota(BigInteger additional) {
 		Config config = Config.getInstance();
-		return FileUtils.sizeOfAsBigInteger(new File(FileHelper.format(config.getString("files.webappFilesLocation")))).compareTo(config.getBigInteger("general.webAppSpaceQuota").multiply(new BigInteger("1000000")).add(additional)) > 0;
+		BigInteger quota = config.getBigInteger("local.webAppSpaceQuota");
+		if (quota == null || quota.equals(BigInteger.valueOf(-1))) {
+			// -1 or not specified means unlimited
+			return false;
+		}
+		return FileUtils.sizeOfAsBigInteger(new File(FileHelper.format(config.getString("files.webappFilesLocation")))).compareTo(quota.multiply(new BigInteger("1000000")).add(additional)) > 0;
 	}
 }
