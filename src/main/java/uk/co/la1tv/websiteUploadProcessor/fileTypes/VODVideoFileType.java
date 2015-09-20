@@ -269,7 +269,7 @@ public class VODVideoFileType extends FileTypeAbstract {
 					logger.warn("ffmpeg finished but returned error code "+exitVal+".");
 					// if any renders fail fail the whole thing.
 					// already rendered files will be cleaned up later because the working directory is cleared
-					returnVal.msg = "Error creating ffmpeg HLS render of video.";
+					returnVal.msg = "Error creating HLS render of video.";
 					return returnVal;
 				}
 			}
