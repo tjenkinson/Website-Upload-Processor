@@ -506,7 +506,27 @@ public class VODVideoFileType extends FileTypeAbstract {
 				e.printStackTrace();
 				throw(new RuntimeException("Error trying to create entries in video_files and video_files_dash."));
 			}
-	
+			
+			try {
+				// create entries in vod_data
+				logger.debug("Creating entry in vod_data table...");
+				Timestamp currentTimestamp = new Timestamp(System.currentTimeMillis());
+				PreparedStatement s = dbConnection.prepareStatement("INSERT INTO vod_data (file_id,duration,created_at,updated_at) VALUES (?,?,?,?)");
+				s.setInt(1, file.getId());
+				s.setDouble(2, info.getDuration());
+				s.setTimestamp(3, currentTimestamp);
+				s.setTimestamp(4, currentTimestamp);
+				int result = s.executeUpdate();
+				s.close();
+				if (result != 1) {
+					logger.debug("Error creating entry in vod_data file with id "+file.getId()+".");
+					return returnVal;
+				}
+				logger.debug("Created entry in vod_data table for file with id "+file.getId()+".");
+			} catch (SQLException e) {
+				e.printStackTrace();
+				throw(new RuntimeException("Error creating entry in vod_data file with id "+file.getId()+"."));
+			}
 	
 			DbHelper.updateStatus(dbConnection, file.getId(), "Finalizing scrub thumbnails.", null);
 			ArrayList<ThumbnailOutputFile> thumbnailOutputFiles = new ArrayList<ThumbnailOutputFile>();
