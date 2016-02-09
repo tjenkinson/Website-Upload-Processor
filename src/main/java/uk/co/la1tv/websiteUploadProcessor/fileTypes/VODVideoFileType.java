@@ -510,6 +510,16 @@ public class VODVideoFileType extends FileTypeAbstract {
 			try {
 				// create entries in vod_data
 				logger.debug("Creating entry in vod_data table...");
+				
+				{
+					// if reprocessing the old entry will still be there so remove it first
+					PreparedStatement s = dbConnection.prepareStatement("DELETE FROM vod_data WHERE file_id=?");
+					s.setInt(1, file.getId());
+					if (s.executeUpdate() == 1) {
+						logger.debug("Removed old vod data.");
+					}
+				}
+				
 				Timestamp currentTimestamp = new Timestamp(System.currentTimeMillis());
 				PreparedStatement s = dbConnection.prepareStatement("INSERT INTO vod_data (file_id,duration,created_at,updated_at) VALUES (?,?,?,?)");
 				s.setInt(1, file.getId());
