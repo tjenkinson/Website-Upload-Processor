@@ -8,10 +8,13 @@ db.host =
 db.database = 
 db.username = 
 db.password = 
-ffmpeg.location = 
-ffmpeg.probeLocation = 
-mp4box.location = 
-imagemagick.convertLocation = 
-imagemagick.identifyLocation = 
-files.webappFilesLocation = 
-files.workingFilesLocation = # each server will create another directory in here which matches its id, and this will be the location where files are worked on
+
+# NOTE YOU DO NOT NEED TO PROVIDE THE FOLLOWING IF RUNNING IN DOCKER
+# (these are configured in docker.properties)
+#files.webappFilesLocation = 
+#files.workingFilesLocation = # each server will create another directory in here which matches its id, and this will be the location where files are worked on
+#ffmpeg.location = 
+#ffmpeg.probeLocation = 
+#mp4box.location = 
+#imagemagick.convertLocation = 
+#imagemagick.identifyLocation = 
